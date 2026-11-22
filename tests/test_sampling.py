@@ -364,3 +364,27 @@ def test_overview_preview_level(tmp_path, engine_parts):
     assert prev.ch0.size < full.ch0.size
     assert prev.level == lvl
     assert prev.ch1[-1] == pytest.approx(full.ch1[-1])
+
+
+# ---------------------------------------------------------------------------
+# packaging
+# ---------------------------------------------------------------------------
+
+def test_package_zip_installs_as_profile_plot(tmp_path):
+    """QGIS names a ZIP-installed plugin after the folder holding the first
+    metadata.txt; it must be exactly 'profile_plot' (a ZIP of the whole
+    repository would give 'profile-plot/profile_plot' and fail to load)."""
+    import subprocess
+    import zipfile
+    root = os.path.join(os.path.dirname(__file__), "..")
+    out = subprocess.run([sys.executable, os.path.join(root, "scripts", "package.py"),
+                          str(tmp_path)], capture_output=True, text=True, check=True)
+    path = out.stdout.strip().splitlines()[-1]
+    with zipfile.ZipFile(path) as zf:
+        names = zf.namelist()
+    meta = sorted(n for n in names if n.endswith("metadata.txt"))
+    assert os.path.split(meta[0])[0] == "profile_plot"     # QGIS installer rule
+    assert all(n.startswith("profile_plot/") for n in names)
+    assert "profile_plot/__init__.py" in names
+    assert not any("__pycache__" in n or n.endswith(".pyc") for n in names)
+    assert not any(n.startswith(("profile_plot/tests", "profile_plot/docs")) for n in names)

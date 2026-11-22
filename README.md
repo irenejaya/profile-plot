@@ -68,8 +68,18 @@ to see each cell as a flat step, choose *Profile line: Steps* in Settings.
 | Method | Steps |
 |---|---|
 | From ZIP | In QGIS: *Plugins ▸ Manage and Install Plugins ▸ Install from ZIP*, choose `profile_plot-1.0.zip`, then *Install Plugin*. |
-| From source | Copy or symlink the `profile_plot` folder into your profile's plugin folder, then enable **Profile Plot** in the Plugin Manager. Find the profile folder with *Settings ▸ User Profiles ▸ Open Active Profile Folder*, then `python/plugins`. |
+| From source | Copy or symlink **only the inner `profile_plot` folder** into your profile's plugin folder, then enable **Profile Plot** in the Plugin Manager. Find the profile folder with *Settings ▸ User Profiles ▸ Open Active Profile Folder*, then `python/plugins`. |
 | Build the ZIP | `python3 scripts/package.py` writes `dist/profile_plot-<version>.zip`. |
+
+> **Use the plugin ZIP, not a ZIP of this repository.** Inside `profile_plot-1.0.zip` the
+> top folder is `profile_plot`, which is what QGIS expects. Two things look similar but fail:
+>
+> * zipping the repository folder;
+> * GitHub's *Code ▸ Download ZIP*.
+>
+> Both add an extra top folder (`profile-plot/` or `profile-plot-main/`), and QGIS then
+> reports `ModuleNotFoundError: No module named 'profile-plot/profile_plot'`. See
+> [Troubleshooting](#troubleshooting) to clean up.
 
 After installing, the **Profile Plot** icon appears on the Plugins toolbar and under
 *Raster ▸ Profile Plot*.
@@ -347,6 +357,7 @@ and 90 ms to all native values.
 | The icon only opens the dock | No rasters are added yet. Click **+** first. |
 | *Cannot read this raster* | The source isn't readable. Check the file path or connection in the layer's properties. |
 | Shortcut does nothing | Assign it first (see [Assign your shortcut](#assign-your-shortcut)), or check for a clash in *Keyboard Shortcuts*. |
+| `Couldn't load plugin 'profile-plot/profile_plot'` / `No module named 'profile-plot/profile_plot'` | A ZIP of the whole repository was installed instead of the plugin ZIP. Close QGIS and delete the folder `profile-plot` (or `profile-plot-main`) from `…\QGIS3\profiles\default\python\plugins`. Then start QGIS and *Install from ZIP* with `profile_plot-1.0.zip` (top folder `profile_plot`). |
 | Plugin Manager says the version is older | You installed a test build with a higher number. Uninstall Profile Plot, then install the ZIP. Your settings are kept. |
 
 ## Development
