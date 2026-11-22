@@ -71,6 +71,7 @@ def main():
         app.processEvents()
 
     dock.act_cross.setChecked(True)
+    dock.act_legend.setChecked(False)   # default: legend hidden
     plot.grab()
     at(50.0, dem.value_at(50.0))
     iface.mw.grab().save(os.path.join(out, "window_crosshair.png"))
@@ -80,6 +81,18 @@ def main():
     wse = s.profiles[s.rasters[1].uid]
     at(45.0, wse.value_at(45.0))
     dock.grab().save(os.path.join(out, "dock_hover.png"))
+
+    # Legend switched on
+    dock.act_legend.setChecked(True)
+    at(50.0, dem.value_at(50.0))
+    dock.grab().save(os.path.join(out, "dock_legend.png"))
+    dock.act_legend.setChecked(False)
+
+    # Image export menu
+    dock.image_menu.popup(dock.image_button.mapToGlobal(dock.image_button.rect().bottomLeft()))
+    app.processEvents()
+    dock.image_menu.grab().save(os.path.join(out, "export_menu.png"))
+    dock.image_menu.hide()
 
     # Collapsed raster list (compact layout)
     dock.act_rasters.setChecked(False)

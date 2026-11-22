@@ -17,6 +17,7 @@ from qgis.PyQt.QtGui import (
     QFont,
     QFontMetricsF,
     QGuiApplication,
+    QImage,
     QPainter,
     QPalette,
     QPen,
@@ -28,6 +29,10 @@ from qgis.PyQt.QtWidgets import QApplication, QFileDialog, QMenu, QSizePolicy, Q
 from .compat import flag_int
 
 HIT_TOLERANCE_PX = 5.0
+# Tooltip background opacity (about 70 %).
+TOOLTIP_ALPHA = 179
+# Exported raster images are rendered at this multiple of screen resolution.
+EXPORT_SCALE = 2.0
 _CLAMP = 1e5
 
 
@@ -276,6 +281,7 @@ class ProfilePlotWidget(QWidget):
 
     cursorChainage = pyqtSignal(object)   # float or None
     viewChanged = pyqtSignal()
+    legendToggled = pyqtSignal(bool)
 
     MODE_HOVER = "hover"
     MODE_CROSSHAIR = "crosshair"
@@ -294,6 +300,7 @@ class ProfilePlotWidget(QWidget):
         self.unit = "m"
         self.placeholder = ""
         self.status_text = ""
+        self.show_legend = False
         self.auto_view = True
         self.view = (0.0, 1.0, 0.0, 1.0)
         self._cache = None
@@ -326,6 +333,10 @@ class ProfilePlotWidget(QWidget):
         self.show_units = bool(show)
         self.unit = unit or "m"
         self._invalidate()
+
+    def set_show_legend(self, show):
+        self.show_legend = bool(show)
+        self.update()
 
     def set_placeholder(self, text):
         if text != self.placeholder:
@@ -380,10 +391,12 @@ class ProfilePlotWidget(QWidget):
 
     # -- geometry -------------------------------------------------------------
 
-    def _layout(self):
+    def _layout(self, width=None, height=None):
+        width = self.width() if width is None else width
+        height = self.height() if height is None else height
         fm = QFontMetricsF(self.font())
         xmin, xmax, ymin, ymax = self.view
-        h_est = max(60.0, self.height() - 3.2 * fm.height() - 12)
+        h_est = max(60.0, height - 3.2 * fm.height() - 12)
         yt, ystep = ticks(ymin, ymax, max(3, int(h_est / (fm.height() * 1.5))))
         ydec = tick_decimals(ystep)
         ylabels = ["{:.{}f}".format(v, ydec) for v in yt]
@@ -392,8 +405,8 @@ class ProfilePlotWidget(QWidget):
         bottom = fm.height() * 2 + 12
         top = 10
         right = 14
-        rect = QRectF(left, top, max(10.0, self.width() - left - right),
-                      max(10.0, self.height() - top - bottom))
+        rect = QRectF(left, top, max(10.0, width - left - right),
+                      max(10.0, height - top - bottom))
         return rect, yt, ylabels, fm
 
     def _to_px(self, x, y):
@@ -435,95 +448,105 @@ class ProfilePlotWidget(QWidget):
         size = self.size()
         pm = QPixmap(max(1, int(size.width() * dpr)), max(1, int(size.height() * dpr)))
         pm.setDevicePixelRatio(dpr)
-        colors = self._colors()
-        pm.fill(colors["bg"])
-        rect, yt, ylabels, fm = self._layout()
-        self._plot_rect = rect
-        xmin, xmax, ymin, ymax = self.view
+        pm.fill(self._colors()["bg"])
         p = QPainter(pm)
         try:
-            p.setFont(self.font())
-            # grid + y ticks
-            grid_pen = QPen(colors["grid"])
-            grid_pen.setWidthF(1.0)
-            text_pen = QPen(colors["fg"])
-            for v, lab in zip(yt, ylabels):
-                _, y = self._to_px(xmin, v)
-                p.setPen(grid_pen)
-                p.drawLine(QPointF(rect.left(), y), QPointF(rect.right(), y))
-                p.setPen(text_pen)
-                tr = QRectF(0, y - fm.height() / 2, rect.left() - 6, fm.height())
-                p.drawText(tr, flag_int(Qt.AlignmentFlag.AlignRight, Qt.AlignmentFlag.AlignVCenter), lab)
-            xt, xstep = ticks(xmin, xmax, max(2, int(rect.width() / 80)))
-            xdec = tick_decimals(xstep)
-            for v in xt:
-                x, _ = self._to_px(v, ymin)
-                p.setPen(grid_pen)
-                p.drawLine(QPointF(x, rect.top()), QPointF(x, rect.bottom()))
-                p.setPen(text_pen)
-                lab = "{:.{}f}".format(v, xdec)
-                tw = fm.horizontalAdvance(lab)
-                p.drawText(QPointF(x - tw / 2, rect.bottom() + fm.ascent() + 4), lab)
-            # axes frame
-            p.setPen(QPen(colors["axis"]))
-            p.drawRect(rect)
-            # titles
-            p.setPen(text_pen)
-            xtitle = "Chainage" + (" (m)" if self.show_units else "")
-            ytitle = "Elevation" + (" ({})".format(self.unit) if self.show_units else "")
-            tw = fm.horizontalAdvance(xtitle)
-            p.drawText(QPointF(rect.center().x() - tw / 2,
-                               rect.bottom() + fm.height() + fm.ascent() + 6), xtitle)
-            p.save()
-            p.translate(4 + fm.ascent(), rect.center().y())
-            p.rotate(-90)
-            tw = fm.horizontalAdvance(ytitle)
-            p.drawText(QPointF(-tw / 2, 0), ytitle)
-            p.restore()
-
-            # curves
-            p.setClipRect(rect.adjusted(-1, -1, 1, 1))
-            p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-            self._polylines = {}
-            any_data = False
-            for s in self.series:
-                prof = s.profile
-                if prof is None:
-                    continue
-                lines = series_polylines(prof, xmin, xmax, ymin, ymax, rect)
-                self._polylines[s.uid] = lines
-                pen = QPen(s.color)
-                pen.setWidthF(1.6)
-                pen.setCapStyle(Qt.PenCapStyle.FlatCap)
-                pen.setJoinStyle(Qt.PenJoinStyle.MiterJoin)
-                if prof.interpolated:
-                    pen.setStyle(Qt.PenStyle.DashLine)
-                p.setPen(pen)
-                for pts in lines:
-                    if pts.shape[0] == 1:
-                        p.drawPoint(QPointF(pts[0, 0], pts[0, 1]))
-                    else:
-                        p.drawPolyline(qpolygon(pts))
-                    any_data = True
-            p.setClipping(False)
-            p.setRenderHint(QPainter.RenderHint.Antialiasing, False)
-
-            if not any_data and self.placeholder:
-                p.setPen(QPen(colors["muted"]))
-                p.drawText(rect, flag_int(Qt.AlignmentFlag.AlignCenter, Qt.TextFlag.TextWordWrap),
-                           self.placeholder)
-            if self.status_text:
-                f = QFont(self.font())
-                f.setItalic(True)
-                p.setFont(f)
-                p.setPen(QPen(colors["muted"]))
-                p.drawText(QPointF(rect.left() + 6, rect.top() + fm.ascent() + 4),
-                           self.status_text)
+            self._paint_static(p, size.width(), size.height())
         finally:
             p.end()
         self._cache = pm
         self._dirty = False
         self.render_count += 1
+
+    def _paint_static(self, p, width, height, export=False):
+        """Axes, grid, curves and labels.  With ``export`` the legend is
+        included (when shown) and the interactive state is left alone."""
+        colors = self._colors()
+        rect, yt, ylabels, fm = self._layout(width, height)
+        self._plot_rect = rect
+        xmin, xmax, ymin, ymax = self.view
+        p.setFont(self.font())
+        # grid + y ticks
+        grid_pen = QPen(colors["grid"])
+        grid_pen.setWidthF(1.0)
+        text_pen = QPen(colors["fg"])
+        for v, lab in zip(yt, ylabels):
+            _, y = self._to_px(xmin, v)
+            p.setPen(grid_pen)
+            p.drawLine(QPointF(rect.left(), y), QPointF(rect.right(), y))
+            p.setPen(text_pen)
+            tr = QRectF(0, y - fm.height() / 2, rect.left() - 6, fm.height())
+            p.drawText(tr, flag_int(Qt.AlignmentFlag.AlignRight, Qt.AlignmentFlag.AlignVCenter), lab)
+        xt, xstep = ticks(xmin, xmax, max(2, int(rect.width() / 80)))
+        xdec = tick_decimals(xstep)
+        for v in xt:
+            x, _ = self._to_px(v, ymin)
+            p.setPen(grid_pen)
+            p.drawLine(QPointF(x, rect.top()), QPointF(x, rect.bottom()))
+            p.setPen(text_pen)
+            lab = "{:.{}f}".format(v, xdec)
+            tw = fm.horizontalAdvance(lab)
+            p.drawText(QPointF(x - tw / 2, rect.bottom() + fm.ascent() + 4), lab)
+        # axes frame
+        p.setPen(QPen(colors["axis"]))
+        p.drawRect(rect)
+        # titles
+        p.setPen(text_pen)
+        xtitle = "Chainage" + (" (m)" if self.show_units else "")
+        ytitle = "Elevation" + (" ({})".format(self.unit) if self.show_units else "")
+        tw = fm.horizontalAdvance(xtitle)
+        p.drawText(QPointF(rect.center().x() - tw / 2,
+                           rect.bottom() + fm.height() + fm.ascent() + 6), xtitle)
+        p.save()
+        p.translate(4 + fm.ascent(), rect.center().y())
+        p.rotate(-90)
+        tw = fm.horizontalAdvance(ytitle)
+        p.drawText(QPointF(-tw / 2, 0), ytitle)
+        p.restore()
+
+        # curves
+        p.setClipRect(rect.adjusted(-1, -1, 1, 1))
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        self._polylines = {}
+        any_data = False
+        for s in self.series:
+            prof = s.profile
+            if prof is None:
+                continue
+            lines = series_polylines(prof, xmin, xmax, ymin, ymax, rect)
+            self._polylines[s.uid] = lines
+            pen = QPen(s.color)
+            pen.setWidthF(1.6)
+            pen.setCapStyle(Qt.PenCapStyle.FlatCap)
+            pen.setJoinStyle(Qt.PenJoinStyle.MiterJoin)
+            if prof.interpolated:
+                pen.setStyle(Qt.PenStyle.DashLine)
+            p.setPen(pen)
+            for pts in lines:
+                if pts.shape[0] == 1:
+                    p.drawPoint(QPointF(pts[0, 0], pts[0, 1]))
+                else:
+                    p.drawPolyline(qpolygon(pts))
+                any_data = True
+        p.setClipping(False)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+
+        if not any_data and self.placeholder:
+            p.setPen(QPen(colors["muted"]))
+            p.drawText(rect, flag_int(Qt.AlignmentFlag.AlignCenter, Qt.TextFlag.TextWordWrap),
+                       self.placeholder)
+        if self.status_text and not export:
+            f = QFont(self.font())
+            f.setItalic(True)
+            p.setFont(f)
+            p.setPen(QPen(colors["muted"]))
+            p.drawText(QPointF(rect.left() + 6, rect.top() + fm.ascent() + 4),
+                       self.status_text)
+            p.setFont(self.font())
+        if export and self.show_legend:
+            visible = [s for s in self.series if s.profile is not None]
+            if visible:
+                self._paint_readout(p, visible, None, fm, colors)
 
     # -- painting ---------------------------------------------------------------------
 
@@ -559,18 +582,28 @@ class ProfilePlotWidget(QWidget):
                 p.setPen(pen)
                 p.drawLine(QPointF(cur.x(), rect.top()), QPointF(cur.x(), rect.bottom()))
                 p.drawLine(QPointF(rect.left(), cur.y()), QPointF(rect.right(), cur.y()))
-                text = "X: {}, Y: {}".format(self._format(ch, True), self._format(ye))
-                self._tooltip(p, cur, text, QColor(38, 50, 56, 235), QColor("#ffffff"))
+                bg = QColor(255, 255, 255, TOOLTIP_ALPHA)
+                self._tooltip(p, cur, self.crosshair_text(ch, ye), bg, QColor("#000000"),
+                              QColor(0, 0, 0, 70))
             else:
                 hit = self._hit_test(cur.x(), cur.y())
                 if hit is not None:
                     s, value = hit
-                    text = "X: {} ; Y: {}".format(self._format(ch, True), self._format(value))
-                    self._tooltip(p, cur, text, s.color, contrast_text(s.color))
-        if visible:
+                    bg = QColor(s.color)
+                    bg.setAlpha(TOOLTIP_ALPHA)
+                    self._tooltip(p, cur, self.hover_text(ch, value), bg, contrast_text(s.color))
+        if visible and self.show_legend:
             self._paint_readout(p, visible, ch, fm, colors)
 
-    def _tooltip(self, p, cur, text, bg, fg):
+    def crosshair_text(self, chainage, elevation):
+        """Crosshair tooltip, e.g. ``x[50.00], y[78.50]``."""
+        return "x[{}], y[{}]".format(self._format(chainage, True), self._format(elevation))
+
+    def hover_text(self, chainage, value):
+        """Hover tooltip, e.g. ``[50.00], [78.50]``."""
+        return "[{}], [{}]".format(self._format(chainage, True), self._format(value))
+
+    def _tooltip(self, p, cur, text, bg, fg, border=None):
         fm = QFontMetricsF(self.font())
         w = fm.horizontalAdvance(text) + 12
         h = fm.height() + 6
@@ -583,7 +616,10 @@ class ProfilePlotWidget(QWidget):
             y = cur.y() - 14 - h
         box = QRectF(x, y, w, h)
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        p.setPen(Qt.PenStyle.NoPen)
+        if border is not None:
+            p.setPen(QPen(border, 1.0))
+        else:
+            p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(bg)
         p.drawRoundedRect(box, 3, 3)
         p.setPen(QPen(fg))
@@ -762,23 +798,78 @@ class ProfilePlotWidget(QWidget):
     def contextMenuEvent(self, event):
         menu = QMenu(self)
         menu.addAction("Zoom full", self.zoom_full)
+        legend = menu.addAction("Show legend")
+        legend.setCheckable(True)
+        legend.setChecked(self.show_legend)
+        legend.toggled.connect(self.legendToggled.emit)
         menu.addSeparator()
-        menu.addAction("Copy plot image", self.copy_image)
-        menu.addAction("Save plot image…", self.save_image)
+        self.add_export_actions(menu)
         menu.exec(event.globalPos())
 
-    def grab_image(self):
-        cursor = self._cursor
-        self._cursor = None
-        img = self.grab()
-        self._cursor = cursor
+    # -- export -----------------------------------------------------------------------
+
+    def add_export_actions(self, menu):
+        """Image export entries, shared by the dock's export button and the
+        plot's context menu."""
+        from . import icons
+        menu.addAction(icons.icon("image"), "Save as PNG…", lambda: self.save_image("png"))
+        menu.addAction(icons.icon("image"), "Save as JPEG…", lambda: self.save_image("jpg"))
+        menu.addAction(icons.icon("svg"), "Save as SVG (vector)…", lambda: self.save_image("svg"))
+        menu.addSeparator()
+        menu.addAction(icons.icon("copy"), "Copy to clipboard", self.copy_image)
+
+    def render_image(self, scale=EXPORT_SCALE, opaque=False):
+        """The plot (without pointer overlay) as a QImage, ``scale`` times
+        the on-screen resolution."""
+        w, h = self.width(), self.height()
+        fmt = QImage.Format.Format_RGB32 if opaque else QImage.Format.Format_ARGB32_Premultiplied
+        img = QImage(max(1, int(w * scale)), max(1, int(h * scale)), fmt)
+        img.setDevicePixelRatio(scale)
+        img.fill(self._colors()["bg"])
+        p = QPainter(img)
+        try:
+            self._paint_static(p, w, h, export=True)
+        finally:
+            p.end()
+        self._dirty = True  # the on-screen cache keeps its own polylines
         return img
 
-    def copy_image(self):
-        (QGuiApplication.clipboard() or QApplication.clipboard()).setPixmap(self.grab_image())
+    def save_svg(self, path):
+        from qgis.PyQt.QtSvg import QSvgGenerator
+        gen = QSvgGenerator()
+        gen.setFileName(path)
+        gen.setSize(self.size())
+        gen.setViewBox(QRectF(0, 0, self.width(), self.height()))
+        gen.setTitle("Profile Plot")
+        p = QPainter(gen)
+        try:
+            p.fillRect(QRectF(0, 0, self.width(), self.height()), self._colors()["bg"])
+            self._paint_static(p, self.width(), self.height(), export=True)
+        finally:
+            p.end()
+        self._dirty = True
+        self.update()
+        return True
 
-    def save_image(self):
-        path, _ = QFileDialog.getSaveFileName(self, "Save plot image", "profile.png",
-                                              "PNG image (*.png)")
-        if path:
-            self.grab_image().save(path, "PNG")
+    def export_to(self, path, fmt):
+        fmt = fmt.lower()
+        if fmt == "svg":
+            return self.save_svg(path)
+        if fmt in ("jpg", "jpeg"):
+            return self.render_image(opaque=True).save(path, "JPG", 95)
+        return self.render_image().save(path, "PNG")
+
+    def save_image(self, fmt="png"):
+        filters = {"png": "PNG image (*.png)", "jpg": "JPEG image (*.jpg *.jpeg)",
+                   "svg": "SVG vector image (*.svg)"}
+        path, _ = QFileDialog.getSaveFileName(self, "Export plot image", "profile." + fmt,
+                                              filters[fmt])
+        if not path:
+            return False
+        exts = {"png": (".png",), "jpg": (".jpg", ".jpeg"), "svg": (".svg",)}[fmt]
+        if not path.lower().endswith(exts):
+            path += exts[0]
+        return self.export_to(path, fmt)
+
+    def copy_image(self):
+        (QGuiApplication.clipboard() or QApplication.clipboard()).setImage(self.render_image())

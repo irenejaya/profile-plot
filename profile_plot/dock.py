@@ -19,6 +19,7 @@ from qgis.PyQt.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QMenu,
     QSizePolicy,
     QSplitter,
     QTabWidget,
@@ -149,16 +150,35 @@ class ProfileDock(QgsDockWidget):
         bar.addWidget(_tool_button(self.act_cross, True))
         bar.addWidget(_separator())
 
+        self.act_legend = QAction(icons.icon("legend"), "Legend", self)
+        self.act_legend.setCheckable(True)
+        self.act_legend.setChecked(settings.get("showLegend", False, bool))
+        self.act_legend.setToolTip("Show legend (raster names and values at the pointer)")
+        b_legend = _tool_button(self.act_legend)
+        b_legend.setAccessibleName("Show legend")
+        bar.addWidget(b_legend)
         self.act_zoom = QAction(icons.icon("zoom_full"), "Zoom full", self)
         self.act_zoom.setToolTip("Zoom full (fit the whole profile)")
-        self.act_export = QAction(icons.icon("export"), "Export line to temporary layer", self)
-        self.act_export.setToolTip("Export line to temporary layer")
         b_zoom = _tool_button(self.act_zoom)
         b_zoom.setAccessibleName("Zoom full")
+        bar.addWidget(b_zoom)
+        bar.addWidget(_separator())
+        self.act_export = QAction(icons.icon("temporary"), "Export line to temporary layer", self)
+        self.act_export.setToolTip("Export line to temporary layer")
         b_export = _tool_button(self.act_export)
         b_export.setAccessibleName("Export line to temporary layer")
-        bar.addWidget(b_zoom)
         bar.addWidget(b_export)
+        self.image_button = QToolButton()
+        self.image_button.setIcon(icons.icon("export"))
+        self.image_button.setIconSize(QSize(18, 18))
+        self.image_button.setAutoRaise(True)
+        self.image_button.setToolTip("Export plot image\nClick: save as PNG\n"
+                                     "Arrow: PNG, JPEG, SVG (vector) or copy to clipboard")
+        self.image_button.setAccessibleName("Export plot image")
+        self.image_button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
+        self.image_menu = QMenu(self.image_button)
+        self.image_button.setMenu(self.image_menu)
+        bar.addWidget(self.image_button)
         bar.addStretch(1)
         self.act_settings = QAction(icons.icon("settings"), "Settings", self)
         self.act_settings.setToolTip("Profile Plot settings (units)")
@@ -240,6 +260,12 @@ class ProfileDock(QgsDockWidget):
         self.raster_panel.tree.layersDropped.connect(self._layers_dropped)
         self.splitter.splitterMoved.connect(self._on_splitter_moved)
         self.plot.cursorChainage.connect(self._on_plot_cursor)
+        self.plot.add_export_actions(self.image_menu)
+        self.image_button.clicked.connect(lambda: self.plot.save_image("png"))
+        self.plot.set_show_legend(self.act_legend.isChecked())
+        self.act_legend.toggled.connect(self._on_legend_toggled)
+        self.plot.legendToggled.connect(self.act_legend.setChecked)
+        s.colorChanged.connect(lambda *_: self._on_profiles())
         self.plot.set_mode("hover" if self.act_hover.isChecked() else "crosshair")
         self.tabs.currentChanged.connect(lambda _i: self._refresh_table())
         self.table_panel.export_button.clicked.connect(self.export_csv)
@@ -526,6 +552,7 @@ class ProfileDock(QgsDockWidget):
             series.append(SeriesView(e.uid, e.name, e.color, p))
         status = "Preview from overview — refining…" if any_preview else ""
         self.plot.set_series(series, s.total_length() if s.has_line else 0.0, status)
+        self.image_button.setEnabled(bool(series))
         self._update_placeholder()
         self._update_footer()
         if self.tabs.currentWidget() is self.table_panel:
@@ -589,6 +616,10 @@ class ProfileDock(QgsDockWidget):
     # ------------------------------------------------------------------
     # actions
     # ------------------------------------------------------------------
+
+    def _on_legend_toggled(self, shown):
+        self.plot.set_show_legend(shown)
+        settings.set("showLegend", shown)
 
     def _on_inspect_mode(self, hover_checked):
         mode = "hover" if hover_checked else "crosshair"

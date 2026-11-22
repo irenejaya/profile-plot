@@ -19,8 +19,8 @@ it uses numpy, GDAL and Qt, which ship with QGIS, and works offline.
 ## Quick start
 
 1. Click the **Profile Plot** toolbar icon (or *Raster ▸ Profile Plot*). The dock opens.
-2. **Add raster**: pick one or several rasters, or drag layers into the dock from the Layers
-   panel or the Browser.
+2. Click **+** (Add raster) and pick one or several rasters, or drag layers into the dock from
+   the Layers panel or the Browser.
 3. Press the icon or your shortcut again (or **Draw line** in the dock) and draw:
 
    | Action | How |
@@ -47,14 +47,34 @@ The assigned key is shown in the icon's and the *Draw line* button's tooltips.
 
 ## The dock
 
-**Toolbar:** raster-list toggle · **Draw line** · **Use selected line** (profiles the selected
-line feature; curved lines are segmentised; for a multipart line the first part is used) ·
-**Hover** / **Crosshair** · **Zoom full** · **Export line to temporary layer** (adds a memory
-layer with the original vertices, direction and CRS) · settings (gear).
+**Toolbar,** from left to right:
 
-**Rasters:** each row has visibility, colour, name and cell size. Double-click a row to change
-its colour. Right-click a row for *Band*, *Move up/down*, *Change colour* and *Remove*, or drag
-rows to reorder them. The list starts empty in each session.
+* raster-list toggle
+* **Draw line**
+* **Use selected line**: profiles the selected line feature. Curved lines are segmentised; for a
+  multipart line the first part is used.
+* **Hover** / **Crosshair**
+* **Legend**: off by default.
+* **Zoom full**
+* **Export line to temporary layer** (temporary-layer icon): adds a scratch layer with the
+  original vertices, direction and CRS.
+* **Export plot image** ▾: click to save a PNG. The arrow offers PNG, JPEG, SVG (vector, for
+  reports and editing) and *Copy to clipboard*. PNG and JPEG are rendered at twice the screen
+  resolution. The image shows what the plot shows, including the legend when it's on.
+* settings (gear)
+
+**Rasters:** each row has visibility, a colour box, name and cell size. Click the colour box to
+pick any colour with the QGIS colour picker. Right-click a row for *Band*, *Move up/down*,
+*Change colour* and *Remove*, or drag rows to reorder them. The list starts empty in each
+session.
+
+New rasters get preset colours in the order you add them:
+
+| Raster | Colour |
+|---|---|
+| 1st (DEM) | brown |
+| 2nd–6th (water levels) | blue, cyan, violet, orange, green |
+| 7th onwards | red |
 
 **Slope layer:** optional. Pick one of your rasters to show **ΔZ** and **Average slope** in the
 footer:
@@ -70,9 +90,11 @@ footer:
 When the raster list is collapsed, the selector moves next to the grade.
 
 **Inspecting:**
-* *Crosshair* shows `X: 50.00, Y: 78.50` (chainage, cursor elevation) anywhere in the plot.
-* *Hover* shows `X: 50.00 ; Y: 78.50` in the line's colour when you point at a curve.
-* The corner readout lists every raster's value at the pointer's chainage.
+* *Crosshair* shows `x[50.00], y[78.50]` (chainage, cursor elevation) anywhere in the plot, on
+  a translucent white tooltip.
+* *Hover* shows `[50.00], [78.50]` (chainage, value of that line) in the line's colour at about
+  70 % opacity when you point at a curve.
+* With **Legend** on, the corner box also lists every raster's value at the pointer's chainage.
 * A yellow dot marks the same station on the map.
 
 **Plot navigation:**
@@ -85,7 +107,7 @@ When the raster list is collapsed, the selector moves next to the grade.
 | drag | pan |
 | double-click, Home or Zoom full | fit the whole profile |
 
-Right-click the plot to copy or save it as an image.
+Right-click the plot for *Zoom full*, *Show legend* and the image export options.
 
 **Sampling** (footer):
 * **Native cells** (default): every cell the line crosses over a positive distance, drawn as
@@ -105,6 +127,7 @@ chainage and your elevation unit (default `m`, e.g. `m AHD`) to the axes, toolti
 table and CSV headings.
 
 ![Hover](docs/images/dock_hover.png)
+![Legend on](docs/images/dock_legend.png)
 ![Compact layout](docs/images/dock_compact.png)
 ![Table](docs/images/dock_table.png)
 
@@ -172,6 +195,7 @@ The tests cover:
 * Agreement between the inspection readout and the CSV at each test station.
 * Rapid redraws never restoring an older line.
 * Shortcut tooltips, and export of vertices, direction and CRS.
+* Colour presets, the colour box, the legend default, tooltip formats and image export.
 
 ## License
 

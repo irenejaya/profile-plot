@@ -1,7 +1,7 @@
 """Raster list panel: rows with visibility, colour, name and cell size."""
 
 from qgis.core import Qgis, QgsMimeDataUtils, QgsProject, QgsRasterLayer, QgsUnitTypes
-from qgis.gui import QgsColorDialog
+from qgis.gui import QgsColorButton, QgsColorDialog
 from qgis.PyQt.QtCore import QSize, Qt, pyqtSignal
 from qgis.PyQt.QtWidgets import (
     QAbstractItemView,
@@ -15,7 +15,6 @@ from qgis.PyQt.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMenu,
-    QPushButton,
     QToolButton,
     QTreeWidget,
     QTreeWidgetItem,
@@ -27,6 +26,7 @@ from . import icons
 from .compat import set_text_alignment
 
 UID_ROLE = 0x0100 + 1  # Qt.UserRole + 1 (plain int works on Qt5 and Qt6)
+COL_VISIBLE, COL_COLOR, COL_NAME, COL_CELL = range(4)
 
 
 def _raster_layer_type():
@@ -89,7 +89,7 @@ class RasterTree(QTreeWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setColumnCount(2)
+        self.setColumnCount(4)
         self.setHeaderHidden(True)
         self.setRootIsDecorated(False)
         self.setIndentation(0)
@@ -103,8 +103,12 @@ class RasterTree(QTreeWidget):
         self.setDropIndicatorShown(True)
         hdr = self.header()
         hdr.setStretchLastSection(False)
-        hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        hdr.setMinimumSectionSize(4)
+        hdr.setSectionResizeMode(COL_VISIBLE, QHeaderView.ResizeMode.ResizeToContents)
+        hdr.setSectionResizeMode(COL_COLOR, QHeaderView.ResizeMode.Fixed)
+        hdr.resizeSection(COL_COLOR, 32)
+        hdr.setSectionResizeMode(COL_NAME, QHeaderView.ResizeMode.Stretch)
+        hdr.setSectionResizeMode(COL_CELL, QHeaderView.ResizeMode.ResizeToContents)
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
 
     def dragEnterEvent(self, event):
@@ -159,8 +163,12 @@ class RasterPanel(QWidget):
         self.title.setFont(f)
         head.addWidget(self.title)
         head.addStretch(1)
-        self.add_button = QPushButton(icons.icon("add"), "Add raster")
-        self.add_button.setToolTip("Add one or more rasters from the project or from files.\n"
+        self.add_button = QToolButton()
+        self.add_button.setIcon(icons.icon("add"))
+        self.add_button.setIconSize(QSize(18, 18))
+        self.add_button.setAutoRaise(True)
+        self.add_button.setAccessibleName("Add raster")
+        self.add_button.setToolTip("Add raster\nAdd one or more rasters from the project or from files.\n"
                                    "You can also drag layers here from the Layers panel or Browser.")
         self.add_button.clicked.connect(self.addRequested)
         head.addWidget(self.add_button)
@@ -168,7 +176,6 @@ class RasterPanel(QWidget):
 
         self.tree = RasterTree(self)
         self.tree.itemChanged.connect(self._on_item_changed)
-        self.tree.itemDoubleClicked.connect(self._on_double_click)
         self.tree.customContextMenuRequested.connect(self._context_menu)
         self.tree.orderChanged.connect(self.session.reorder)
         lay.addWidget(self.tree, 1)
@@ -194,6 +201,7 @@ class RasterPanel(QWidget):
         lay.addLayout(self.slope_slot)
 
         session.rastersChanged.connect(self.refresh)
+        session.colorChanged.connect(self._on_color_changed)
         session.slopeChanged.connect(self._sync_slope_combo)
         self.refresh()
 
@@ -209,17 +217,20 @@ class RasterPanel(QWidget):
                 it.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable |
                             Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsDragEnabled)
                 it.setData(0, UID_ROLE, e.uid)
-                it.setText(0, e.name)
-                it.setIcon(0, icons.color_swatch(e.color))
-                it.setCheckState(0, Qt.CheckState.Checked if e.visible else Qt.CheckState.Unchecked)
+                it.setCheckState(COL_VISIBLE, Qt.CheckState.Checked if e.visible
+                                 else Qt.CheckState.Unchecked)
+                it.setToolTip(COL_VISIBLE, "Show or hide this curve")
+                it.setText(COL_NAME, e.name)
                 tip = e.layer.source()
                 if e.error:
                     tip = e.error + "\n" + tip
-                it.setToolTip(0, tip)
-                it.setText(1, format_cell_size(e, self.show_units))
-                set_text_alignment(it, 1, Qt.AlignmentFlag.AlignRight, Qt.AlignmentFlag.AlignVCenter)
-                it.setToolTip(1, "Cell size")
+                it.setToolTip(COL_NAME, tip)
+                it.setText(COL_CELL, format_cell_size(e, self.show_units))
+                set_text_alignment(it, COL_CELL, Qt.AlignmentFlag.AlignRight,
+                                   Qt.AlignmentFlag.AlignVCenter)
+                it.setToolTip(COL_CELL, "Cell size")
                 self.tree.addTopLevelItem(it)
+                self.tree.setItemWidget(it, COL_COLOR, self._color_button(e))
                 if e.uid == sel:
                     self.tree.setCurrentItem(it)
             self.title.setText("Rasters ({})".format(len(self.session.rasters)))
@@ -240,6 +251,37 @@ class RasterPanel(QWidget):
             self.session.set_slope(None)
         combo.blockSignals(False)
 
+    def _color_button(self, e):
+        """QGIS colour box: click it to pick the curve colour."""
+        btn = QgsColorButton()
+        btn.setShowMenu(False)
+        btn.setAllowOpacity(False)
+        btn.setColorDialogTitle("Curve colour")
+        btn.setColor(e.color)
+        btn.setFixedSize(26, 16)
+        btn.setToolTip("Click to change the colour of this curve")
+        btn.setAccessibleName("Colour of {}".format(e.name))
+        btn.setProperty("uid", e.uid)
+        btn.colorChanged.connect(lambda c, uid=e.uid: self.session.set_color(uid, c))
+        return btn
+
+    def color_button(self, uid):
+        for i in range(self.tree.topLevelItemCount()):
+            it = self.tree.topLevelItem(i)
+            if it.data(0, UID_ROLE) == uid:
+                return self.tree.itemWidget(it, COL_COLOR)
+        return None
+
+    def _on_color_changed(self, uid, color):
+        btn = self.color_button(uid)
+        if btn is not None and btn.color() != color:
+            btn.blockSignals(True)
+            btn.setColor(color)
+            btn.blockSignals(False)
+        idx = self.slope_combo.findData(uid)
+        if idx >= 0:
+            self.slope_combo.setItemIcon(idx, icons.color_swatch(color))
+
     def _sync_slope_combo(self):
         combo = self.slope_combo
         idx = combo.findData(self.session.slope_uid) if self.session.slope_uid else 0
@@ -257,16 +299,13 @@ class RasterPanel(QWidget):
         return it.data(0, UID_ROLE) if it is not None else None
 
     def _on_item_changed(self, item, column):
-        if self._updating or column != 0:
+        if self._updating or column != COL_VISIBLE:
             return
         uid = item.data(0, UID_ROLE)
-        self.session.set_visible(uid, item.checkState(0) == Qt.CheckState.Checked)
+        self.session.set_visible(uid, item.checkState(COL_VISIBLE) == Qt.CheckState.Checked)
 
     def _on_slope_changed(self, index):
         self.session.set_slope(self.slope_combo.itemData(index))
-
-    def _on_double_click(self, item, column):
-        self._choose_color(item.data(0, UID_ROLE))
 
     def _choose_color(self, uid):
         e = self.session.entry(uid)

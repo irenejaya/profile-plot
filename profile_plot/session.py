@@ -52,18 +52,18 @@ SPLIT_TILES = 24
 TAIL_PREVIEW_CELLS = 12000
 TAIL_TARGET_CELLS = 3000
 
-PALETTE = [
-    "#8c5a2b",  # terrain brown
-    "#1f45e0",  # blue
-    "#14c8b4",  # cyan
-    "#d62728",  # red
-    "#9467bd",  # purple
-    "#ff7f0e",  # orange
-    "#2ca02c",  # green
-    "#e377c2",  # pink
-    "#7f7f7f",  # grey
-    "#bcbd22",  # olive
+# Colour presets in the order rasters are added: the DEM brown first, then
+# five water-level colours.  Every raster after those is red.  Users can
+# change any colour from the swatch in the raster list.
+PRESET_COLORS = [
+    "#8c5a2b",  # 1 terrain / DEM brown
+    "#1f45e0",  # 2 water level: blue
+    "#14c8b4",  # 3 water level: cyan
+    "#7b3fe4",  # 4 water level: violet
+    "#f08c00",  # 5 water level: orange
+    "#2e9e44",  # 6 water level: green
 ]
+OVERFLOW_COLOR = "#e00000"  # 7th raster onwards
 
 MODES = ("native", "station", "bilinear")
 
@@ -247,6 +247,7 @@ class ProfileSession(QObject):
     profilesChanged = pyqtSignal()
     lineChanged = pyqtSignal()
     rastersChanged = pyqtSignal()
+    colorChanged = pyqtSignal(int, QColor)   # uid, colour (no list rebuild)
     slopeChanged = pyqtSignal()
     message = pyqtSignal(str, int)   # text, Qgis.MessageLevel value
 
@@ -308,11 +309,12 @@ class ProfileSession(QObject):
     # ------------------------------------------------------------------
 
     def next_color(self):
+        """First preset not used by a raster in the list, else red."""
         used = {e.color.name().lower() for e in self.rasters}
-        for c in PALETTE:
+        for c in PRESET_COLORS:
             if c not in used:
                 return c
-        return PALETTE[len(self.rasters) % len(PALETTE)]
+        return OVERFLOW_COLOR
 
     def entry(self, uid):
         for e in self.rasters:
@@ -393,10 +395,11 @@ class ProfileSession(QObject):
 
     def set_color(self, uid, color):
         e = self.entry(uid)
-        if e is not None:
-            e.color = QColor(color)
-            self.rastersChanged.emit()
-            self._schedule()
+        color = QColor(color)
+        if e is None or not color.isValid() or e.color == color:
+            return
+        e.color = color
+        self.colorChanged.emit(uid, QColor(color))
 
     def set_band(self, uid, band):
         e = self.entry(uid)

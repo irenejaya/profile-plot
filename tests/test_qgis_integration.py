@@ -5,6 +5,7 @@ Skipped automatically when PyQGIS is not importable.
 """
 
 import csv
+import os
 import time
 
 import numpy as np
@@ -408,3 +409,108 @@ def test_layer_removal_releases_tiles(env):
     env["app"].processEvents()
     assert e.uid not in [x.uid for x in s.rasters]
     assert not any(k[0] == key for k in s.engine.cache._data)
+
+
+# ---------------------------------------------------------------------------
+# UI refinements: + button, colours, legend, tooltips, image export
+# ---------------------------------------------------------------------------
+
+def test_add_button_is_icon_only(env):
+    b = env["plugin"].dock.raster_panel.add_button
+    assert b.text() == "" and not b.icon().isNull()
+    assert b.accessibleName() == "Add raster"
+
+
+def test_temporary_layer_and_image_export_buttons(env):
+    dock = env["plugin"].dock
+    assert dock.act_export.toolTip() == "Export line to temporary layer"
+    assert not dock.act_export.icon().isNull()
+    texts = [a.text() for a in dock.image_menu.actions() if a.text()]
+    assert texts == ["Save as PNG…", "Save as JPEG…", "Save as SVG (vector)…",
+                     "Copy to clipboard"]
+
+
+def test_color_presets_then_red(env):
+    from profile_plot.session import OVERFLOW_COLOR, PRESET_COLORS
+    from qgis.PyQt.QtGui import QColor
+    s = env["plugin"].dock.session
+    assert PRESET_COLORS[0] == "#8c5a2b" and len(PRESET_COLORS) == 6
+    assert [e.color.name() for e in s.rasters[:2]] == PRESET_COLORS[:2]
+
+    class Fake:
+        def __init__(self, c):
+            self.color = QColor(c)
+    saved = s.rasters
+    try:
+        s.rasters = []
+        got = []
+        for _ in range(8):
+            c = s.next_color()
+            got.append(c)
+            s.rasters.append(Fake(c))
+        assert got == PRESET_COLORS + [OVERFLOW_COLOR, OVERFLOW_COLOR]
+    finally:
+        s.rasters = saved
+
+
+def test_color_box_changes_curve_colour_without_rebuilding(env):
+    from qgis.PyQt.QtGui import QColor
+    dock = env["plugin"].dock
+    s = dock.session
+    e = s.rasters[0]
+    btn = dock.raster_panel.color_button(e.uid)
+    assert btn is not None and btn.color() == e.color
+    btn.setColor(QColor("#123456"))
+    env["app"].processEvents()
+    assert e.color.name() == "#123456"
+    assert dock.raster_panel.color_button(e.uid) is btn   # list not rebuilt
+    assert dock.plot.series[0].color.name() == "#123456"
+    s.set_color(e.uid, QColor("#8c5a2b"))
+    assert btn.color().name() == "#8c5a2b"
+
+
+def test_legend_toggle(env):
+    from profile_plot import settings
+    dock = env["plugin"].dock
+    dock.act_legend.setChecked(True)
+    dock.act_legend.setChecked(False)
+    assert not dock.plot.show_legend
+    assert settings.get("showLegend", True, bool) is False
+    dock.act_legend.setChecked(True)
+    assert dock.plot.show_legend
+    dock.plot.legendToggled.emit(False)   # from the plot's context menu
+    assert not dock.act_legend.isChecked() and not dock.plot.show_legend
+
+
+def test_legend_hidden_by_default(tmp_path):
+    from profile_plot.plot_widget import ProfilePlotWidget
+    assert ProfilePlotWidget().show_legend is False
+    from profile_plot import settings
+    from qgis.core import QgsSettings
+    QgsSettings().remove(settings.PREFIX + "showLegend")
+    assert settings.get("showLegend", False, bool) is False
+
+
+def test_tooltip_formats(env):
+    plot = env["plugin"].dock.plot
+    plot.set_units(False, "m")
+    assert plot.crosshair_text(50.0, -100.0) == "x[50.00], y[-100.00]"
+    assert plot.hover_text(50.0, 70.0) == "[50.00], [70.00]"
+    plot.set_units(True, "m AHD")
+    assert plot.crosshair_text(50.0, 78.5) == "x[50.00 m], y[78.50 m AHD]"
+    assert plot.hover_text(50.0, 78.5) == "[50.00 m], [78.50 m AHD]"
+    plot.set_units(False, "m")
+
+
+def test_image_export(env, tmp_path):
+    from qgis.PyQt.QtGui import QImage
+    plot = env["plugin"].dock.plot
+    plot.resize(600, 300)
+    for fmt in ("png", "jpg", "svg"):
+        path = str(tmp_path / ("plot." + fmt))
+        assert plot.export_to(path, fmt)
+        assert os.path.getsize(path) > 1000
+    img = QImage(str(tmp_path / "plot.png"))
+    assert (img.width(), img.height()) == (1200, 600)   # 2x resolution
+    with open(str(tmp_path / "plot.svg")) as fh:
+        assert "<svg" in fh.read(500)
