@@ -696,3 +696,34 @@ def test_map_marker_on_line_still_being_drawn(env):
     _plot_leave(plot)
     s.clear_line()
     tool.drawing = False
+
+
+def test_minor_grid_spacing():
+    from profile_plot.plot_widget import minor_step, minor_ticks
+    assert minor_step(20, 7.6) == 1.0          # 100 m profile: every 1 m
+    assert minor_step(1, 55) == pytest.approx(0.2)
+    assert minor_step(2000, 0.076) == pytest.approx(200)   # 10 km: legible
+    assert minor_step(10, 0.1) is None          # too dense: no minor grid
+    assert minor_ticks(0, 10, 5, 1) == [1, 2, 3, 4, 6, 7, 8, 9]
+
+
+def test_end_tick_label_inside_plot(env):
+    """The last chainage label (e.g. 10000) is not cut at the right edge."""
+    from qgis.PyQt.QtGui import QColor, QFontMetricsF
+    plot = env["plugin"].dock.plot
+    plot.resize(600, 260)
+    saved = (plot.view, plot.auto_view)
+    plot.auto_view = False
+    plot.view = (0.0, 10000.0, 0.0, 100.0)
+    img = plot.render_image(scale=1.0, opaque=True)
+    r = plot._plot_rect
+    fm = QFontMetricsF(plot.font())
+    bg = QColor(img.pixel(img.width() - 1, 2))
+    band = range(int(r.bottom()) + 3, int(r.bottom() + fm.height() + 4))
+    for x in (img.width() - 1, img.width() - 2):
+        assert all(QColor(img.pixel(x, y)) == bg for y in band)
+    # ...and the label itself was drawn just inside the edge
+    inside = [QColor(img.pixel(x, y)) != bg for x in range(img.width() - 40, img.width() - 2)
+              for y in band]
+    assert any(inside)
+    plot.view, plot.auto_view = saved

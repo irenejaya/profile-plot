@@ -99,6 +99,50 @@ def ticks(lo, hi, target):
     return out, step
 
 
+# Minor grid: preferred spacing (1 m) and the smallest gap between minor
+# lines on screen, in pixels.
+MINOR_PREFERRED = 1.0
+MINOR_MIN_PX = 7.0
+
+
+def minor_step(major, px_per_unit, preferred=MINOR_PREFERRED, min_px=MINOR_MIN_PX):
+    """Spacing of the light minor grid between labelled (major) ticks.
+
+    Every ``preferred`` units (1 m) when that divides the major step and is
+    at least ``min_px`` apart on screen; otherwise the finest of major/10,
+    /5, /4, /2 that is legible.  ``None`` when even major/2 is too dense.
+    """
+    if major <= 0 or px_per_unit <= 0:
+        return None
+    candidates = []
+    n = major / preferred
+    if n > 1.5 and abs(n - round(n)) < 1e-6:
+        candidates.append(preferred)
+    candidates += [major / d for d in (10, 5, 4, 2)]
+    for c in candidates:
+        if c * px_per_unit >= min_px:
+            return c
+    return None
+
+
+def minor_ticks(lo, hi, major, minor):
+    """Minor tick positions in [lo, hi] that are not on a major tick."""
+    if minor is None:
+        return []
+    out = []
+    k = math.ceil(lo / minor - 1e-9)
+    v = k * minor
+    count = 0
+    while v <= hi + minor * 1e-9 and count < 2000:
+        r = v / major
+        if abs(r - round(r)) > 1e-6:
+            out.append(v)
+        k += 1
+        v = k * minor
+        count += 1
+    return out
+
+
 def tick_decimals(step):
     text = "{:.10f}".format(step).rstrip("0")
     return len(text.split(".")[1]) if "." in text else 0
@@ -310,6 +354,7 @@ class ProfilePlotWidget(QWidget):
         self._drag_origin = None
         self._drag_view = None
         self.render_count = 0
+        self._ystep = 1.0
 
     # -- configuration ------------------------------------------------------
 
@@ -406,6 +451,7 @@ class ProfilePlotWidget(QWidget):
         right = 14
         rect = QRectF(left, top, max(10.0, width - left - right),
                       max(10.0, height - top - bottom))
+        self._ystep = ystep
         return rect, yt, ylabels, fm
 
     def _to_px(self, x, y):
@@ -434,7 +480,8 @@ class ProfilePlotWidget(QWidget):
         return {
             "bg": bg,
             "fg": fg,
-            "grid": mix(bg, fg, 0.12),
+            "grid": mix(bg, fg, 0.14),
+            "grid_minor": mix(bg, fg, 0.06),
             "axis": mix(bg, fg, 0.55),
             "muted": mix(bg, fg, 0.6),
             "window": pal.color(QPalette.ColorRole.Window),
@@ -465,7 +512,21 @@ class ProfilePlotWidget(QWidget):
         self._plot_rect = rect
         xmin, xmax, ymin, ymax = self.view
         p.setFont(self.font())
-        # grid + y ticks
+        # minor grid (light, every 1 m where legible)
+        xt, xstep = ticks(xmin, xmax, max(2, int(rect.width() / 80)))
+        ystep = self._ystep
+        minor_pen = QPen(colors["grid_minor"])
+        minor_pen.setWidthF(1.0)
+        p.setPen(minor_pen)
+        mx = minor_step(xstep, rect.width() / (xmax - xmin))
+        for v in minor_ticks(xmin, xmax, xstep, mx):
+            x, _ = self._to_px(v, ymin)
+            p.drawLine(QPointF(x, rect.top()), QPointF(x, rect.bottom()))
+        my = minor_step(ystep, rect.height() / (ymax - ymin))
+        for v in minor_ticks(ymin, ymax, ystep, my):
+            _, y = self._to_px(xmin, v)
+            p.drawLine(QPointF(rect.left(), y), QPointF(rect.right(), y))
+        # major grid + y ticks
         grid_pen = QPen(colors["grid"])
         grid_pen.setWidthF(1.0)
         text_pen = QPen(colors["fg"])
@@ -476,7 +537,6 @@ class ProfilePlotWidget(QWidget):
             p.setPen(text_pen)
             tr = QRectF(0, y - fm.height() / 2, rect.left() - 6, fm.height())
             p.drawText(tr, flag_int(Qt.AlignmentFlag.AlignRight, Qt.AlignmentFlag.AlignVCenter), lab)
-        xt, xstep = ticks(xmin, xmax, max(2, int(rect.width() / 80)))
         xdec = tick_decimals(xstep)
         for v in xt:
             x, _ = self._to_px(v, ymin)
@@ -485,7 +545,9 @@ class ProfilePlotWidget(QWidget):
             p.setPen(text_pen)
             lab = "{:.{}f}".format(v, xdec)
             tw = fm.horizontalAdvance(lab)
-            p.drawText(QPointF(x - tw / 2, rect.bottom() + fm.ascent() + 4), lab)
+            # keep end labels (e.g. 10000) inside the widget
+            tx = min(max(x - tw / 2, 2.0), width - tw - 2.0)
+            p.drawText(QPointF(tx, rect.bottom() + fm.ascent() + 4), lab)
         # axes frame
         p.setPen(QPen(colors["axis"]))
         p.drawRect(rect)
