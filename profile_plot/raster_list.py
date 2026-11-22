@@ -20,6 +20,7 @@ from qgis.PyQt.QtWidgets import (
     QSizePolicy,
     QStyle,
     QStyleOptionComboBox,
+    QStyleOptionHeader,
     QStyledItemDelegate,
     QStylePainter,
     QToolButton,
@@ -181,7 +182,7 @@ class GridDelegate(QStyledItemDelegate):
         painter.setPen(QPen(grid_color(option.palette), 1))
         r = option.rect
         painter.drawLine(r.left(), r.bottom(), r.right(), r.bottom())
-        if index.column() in (COL_COLOR, COL_NAME):
+        if index.column() == COL_NAME:
             painter.drawLine(r.right(), r.top(), r.right(), r.bottom())
         painter.restore()
 
@@ -189,6 +190,52 @@ class GridDelegate(QStyledItemDelegate):
         size = super().sizeHint(option, index)
         size.setHeight(max(size.height(), self.row_height))
         return size
+
+
+RESOLUTION_HEADER = "\u0394x"   # Δx
+RESOLUTION_TIP = "\u0394x: resolution (cell size)"
+NAME_SPAN = (COL_VISIBLE, COL_COLOR, COL_NAME)
+
+
+class MergedHeader(QHeaderView):
+    """Header with one "Name" section spanning the tick, colour and name
+    columns."""
+
+    def __init__(self, parent=None):
+        super().__init__(Qt.Orientation.Horizontal, parent)
+
+    def _span_rect(self, rect):
+        x0 = self.sectionViewportPosition(NAME_SPAN[0])
+        last = NAME_SPAN[-1]
+        x1 = self.sectionViewportPosition(last) + self.sectionSize(last)
+        return QRect(x0, rect.y(), x1 - x0, rect.height())
+
+    def paintSection(self, painter, rect, logical_index):  # noqa: N802
+        if not rect.isValid():
+            return
+        opt = QStyleOptionHeader()
+        try:
+            self.initStyleOption(opt)
+        except AttributeError:
+            opt.initFrom(self)
+        model = self.model()
+        if logical_index in NAME_SPAN:
+            opt.rect = self._span_rect(rect)
+            opt.section = NAME_SPAN[0]
+            opt.text = model.headerData(COL_NAME, Qt.Orientation.Horizontal) if model else ""
+            opt.textAlignment = Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+            opt.position = QStyleOptionHeader.SectionPosition.Beginning
+        else:
+            opt.rect = rect
+            opt.section = logical_index
+            opt.text = model.headerData(logical_index, Qt.Orientation.Horizontal) if model else ""
+            opt.textAlignment = Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+            opt.position = QStyleOptionHeader.SectionPosition.End
+        opt.text = opt.text or ""
+        painter.save()
+        painter.setClipRect(opt.rect)
+        self.style().drawControl(QStyle.ControlElement.CE_Header, opt, painter, self)
+        painter.restore()
 
 
 class RasterTree(QTreeWidget):
@@ -200,7 +247,8 @@ class RasterTree(QTreeWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setColumnCount(4)
-        self.setHeaderLabels(["", "", "Name", "Res."])
+        self.setHeader(MergedHeader(self))
+        self.setHeaderLabels(["", "", "Name", RESOLUTION_HEADER])
         self._delegate = GridDelegate(self)
         self._delegate.row_height = max(self.fontMetrics().height() + 8, icons.SWATCH_SIZE + 10)
         self.setItemDelegate(self._delegate)
@@ -229,7 +277,7 @@ class RasterTree(QTreeWidget):
         hdr.setDefaultAlignment(flag_align_left_vcenter())
         set_text_alignment(self.headerItem(), COL_CELL, Qt.AlignmentFlag.AlignRight,
                            Qt.AlignmentFlag.AlignVCenter)
-        self.headerItem().setToolTip(COL_CELL, "Resolution (cell size)")
+        self.headerItem().setToolTip(COL_CELL, RESOLUTION_TIP)
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
 
     def dragEnterEvent(self, event):
@@ -349,7 +397,7 @@ class RasterPanel(QWidget):
                 it.setText(COL_CELL, format_cell_size(e, self.show_units))
                 set_text_alignment(it, COL_CELL, Qt.AlignmentFlag.AlignRight,
                                    Qt.AlignmentFlag.AlignVCenter)
-                it.setToolTip(COL_CELL, "Resolution (cell size)")
+                it.setToolTip(COL_CELL, RESOLUTION_TIP)
                 self.tree.addTopLevelItem(it)
                 self.tree.setItemWidget(it, COL_COLOR, self._color_button(e))
                 if e.uid == sel:
@@ -505,7 +553,7 @@ class RasterPanel(QWidget):
         name_w = max([fm.horizontalAdvance(e.name) for e in self.session.rasters] +
                      [fm.horizontalAdvance("Name")]) + 16
         cell_w = max([fm.horizontalAdvance(format_cell_size(e, self.show_units))
-                      for e in self.session.rasters] + [fm.horizontalAdvance("Res.")]) + 18
+                      for e in self.session.rasters] + [fm.horizontalAdvance(RESOLUTION_HEADER)]) + 18
         cols = hdr.sectionSize(COL_VISIBLE) + hdr.sectionSize(COL_COLOR) + name_w + cell_w
         frame = tree.frameWidth() * 2 + tree.verticalScrollBar().sizeHint().width()
         margins = self.layout().contentsMargins()

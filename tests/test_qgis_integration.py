@@ -527,12 +527,18 @@ def test_legend_has_no_chainage_title(env):
 
 
 def test_raster_box_is_a_table(env):
-    from profile_plot.raster_list import COL_CELL, COL_NAME, GridDelegate
+    from profile_plot.raster_list import (COL_CELL, COL_COLOR, COL_NAME, COL_VISIBLE,
+                                          GridDelegate, MergedHeader)
     tree = env["plugin"].dock.raster_panel.tree
     assert isinstance(tree.itemDelegate(), GridDelegate)
     assert not tree.isHeaderHidden()
+    # One "Name" header over tick, colour and name; resolution is Δx
+    assert isinstance(tree.header(), MergedHeader)
+    assert tree.headerItem().text(COL_VISIBLE) == ""
+    assert tree.headerItem().text(COL_COLOR) == ""
     assert tree.headerItem().text(COL_NAME) == "Name"
-    assert tree.headerItem().text(COL_CELL) == "Res."
+    assert tree.headerItem().text(COL_CELL) == "\u0394x"
+    assert not tree.header().grab().isNull()
     # Names and resolutions are not cut once the panel fits itself
     dock = env["plugin"].dock
     dock.resize(1100, 340)

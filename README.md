@@ -62,9 +62,9 @@ The assigned key is shown in the icon's and the *Draw line* button's tooltips.
   resolution. The image shows what the plot shows, including the legend when it's on.
 * settings (gear)
 
-**Rasters:** a small table with a line under each row. Each row has visibility, a colour box,
-**Name** and **Res.** (resolution, i.e. cell size), with a divider between the name and the
-resolution. The panel widens to fit the longest name. Click the colour box to pick any colour
+**Rasters:** a small table with a line under each row. One **Name** header covers the tick,
+colour box and name; **Δx** is the resolution (cell size), with a divider between the name and
+Δx. The panel widens to fit the longest name. Click the colour box to pick any colour
 with the QGIS colour picker. Right-click a row for *Band*, *Move up/down*,
 *Change colour* and *Remove*, or drag rows to reorder them. The list starts empty in each
 session.
