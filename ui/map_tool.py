@@ -27,6 +27,7 @@ class ProfileMapTool(QgsMapTool):
     def __init__(self, canvas):
         super().__init__(canvas)
         self.drawing = False
+        self.snapping = False    # follow project snapping (Settings), off by default
         self._snap = QgsSnapIndicator(canvas)
         try:
             self.setCursor(QgsApplication.getThemeCursor(
@@ -35,12 +36,17 @@ class ProfileMapTool(QgsMapTool):
             self.setCursor(Qt.CursorShape.CrossCursor)
 
     def _point(self, event):
-        try:
-            p = event.snapPoint()
-            self._snap.setMatch(event.mapPointMatch())
-            return QgsPointXY(p)
-        except Exception:
-            return QgsPointXY(event.mapPoint())
+        """Clicked map position.  Project snapping is ignored unless the
+        "Snap to features while drawing" setting is on, so a profile line
+        never snaps just because snapping is on for editing."""
+        if self.snapping:
+            try:
+                p = event.snapPoint()
+                self._snap.setMatch(event.mapPointMatch())
+                return QgsPointXY(p)
+            except Exception:
+                pass
+        return QgsPointXY(event.mapPoint())
 
     def canvasPressEvent(self, event):
         btn = event.button()

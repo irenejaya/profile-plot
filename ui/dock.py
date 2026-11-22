@@ -146,7 +146,7 @@ class ProfileDock(QgsDockWidget):
         grp.setExclusive(True)
         grp.addAction(self.act_hover)
         grp.addAction(self.act_cross)
-        mode = settings.get("inspectMode", "crosshair", str)
+        mode = settings.get("inspectMode", "hover", str)
         (self.act_hover if mode == "hover" else self.act_cross).setChecked(True)
         bar.addWidget(_tool_button(self.act_hover, True))
         bar.addWidget(_tool_button(self.act_cross, True))
@@ -702,6 +702,7 @@ class ProfileDock(QgsDockWidget):
         self.plot.set_show_legend(settings.show_legend())
         self.plot.set_line_style(settings.line_style())
         self.plot.set_axis_titles(settings.x_title(), settings.y_title())
+        self.map_tool.snapping = settings.snap_drawing()
         if self.canvas_item is not None:
             self.canvas_item.set_show_ab(settings.show_ab())
         self.raster_panel.set_show_units(show)

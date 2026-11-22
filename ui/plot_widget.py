@@ -316,7 +316,7 @@ class ProfilePlotWidget(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, True)
         self.series = []
         self.length = 0.0
-        self.mode = self.MODE_CROSSHAIR
+        self.mode = self.MODE_HOVER
         self.show_units = False
         self.unit = "m"
         self.placeholder = ""

@@ -971,3 +971,59 @@ def test_add_button_adds_selected_raster_without_dialog(env, monkeypatch):
     assert [e.layer_id for e in s.rasters] == [alive[0].id()] and opened == [True]
     iface.setActiveLayer(None)
     s.add_layers(alive)
+
+
+def test_draw_tool_ignores_project_snapping_by_default(env):
+    """Clicks use the raw map position unless "Snap to features while
+    drawing" is ticked; then the project's snapped position is used."""
+    from profile_plot.core import settings
+    from profile_plot.ui.settings_dialog import SettingsDialog
+    dock = env["plugin"].dock
+    tool = dock.map_tool
+
+    class Event:                      # a click with a snap target nearby
+        def mapPoint(self):
+            return QgsPointXY(100.0, 200.0)
+
+        def snapPoint(self):
+            return QgsPointXY(101.5, 198.0)
+
+        def mapPointMatch(self):
+            from qgis.core import QgsPointLocator
+            return QgsPointLocator.Match()
+
+    assert settings.snap_drawing() is False
+    dock._apply_settings()
+    assert tool.snapping is False
+    p = tool._point(Event())
+    assert (p.x(), p.y()) == (100.0, 200.0)          # not snapped
+    dlg = SettingsDialog(dock)
+    assert dlg.snap_drawing.isChecked() is False
+    dlg.snap_drawing.setChecked(True)
+    dlg.accept()
+    dock._apply_settings()
+    p = tool._point(Event())
+    assert (p.x(), p.y()) == (101.5, 198.0)          # snapped
+    settings.set("snapDrawing", False)
+    dock._apply_settings()
+    assert tool.snapping is False
+
+
+def test_hover_is_the_default_mode():
+    from profile_plot import classFactory
+    from profile_plot.core import settings
+    from profile_plot.ui.plot_widget import ProfilePlotWidget
+    from qgis.core import QgsSettings
+    assert ProfilePlotWidget().mode == "hover"
+    saved = settings.get("inspectMode", None, str)
+    QgsSettings().remove(settings.PREFIX + "inspectMode")
+    iface = H.FakeIface()
+    plugin = classFactory(iface)
+    plugin.initGui()
+    plugin.run()
+    try:
+        assert plugin.dock.act_hover.isChecked() and plugin.dock.plot.mode == "hover"
+    finally:
+        plugin.unload()
+        if saved:
+            settings.set("inspectMode", saved)

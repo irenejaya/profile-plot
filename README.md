@@ -123,7 +123,7 @@ The assigned keys are shown in the icon's and the **Draw line** button's tooltip
 
 | Action | How |
 |---|---|
-| Add a vertex | left-click (snaps if snapping is on in your project) |
+| Add a vertex | left-click, exactly where you click. Project snapping is ignored, so turning snapping on for editing doesn't affect profile lines. Tick *Snap to features while drawing* in Settings to snap. |
 | Undo the last vertex | Backspace (or Delete) |
 | Finish | right-click (or Enter) |
 | Cancel the line in progress | Esc |
@@ -147,7 +147,7 @@ a new line or close the dock.
 | ☰ Rasters | Shows or hides the raster list (compact layout). |
 | **Draw line** | Starts line capture. Same action as the plugin icon and your shortcut. |
 | **Use selected line** | Profiles the selected line feature, using the active layer first. Curved lines are segmentised; for a multipart line the first part is used. |
-| **Hover** / **Crosshair** | Inspection mode, see [Reading the plot](#reading-the-plot). Your choice is remembered. |
+| **Hover** / **Crosshair** | Inspection mode, see [Reading the plot](#reading-the-plot). Hover is the default; your choice is remembered. |
 | Zoom full | Fits the whole profile. |
 | Export line to temporary layer (scratch-layer icon) | Adds a temporary layer *Profile alignment* with the original vertices, direction and CRS. Enabled once a line is finished. |
 | Export plot image ▾ | Click the icon to save a PNG. The arrow offers PNG, JPEG, SVG (vector) or *Copy to clipboard*. |
@@ -291,6 +291,7 @@ Images match what you see, including the legend if it's on.
 | Setting | Default | Effect |
 |---|---|---|
 | Show legend | off | Corner box with each raster and its value at the pointer. |
+| Snap to features while drawing | off | Off: profile lines go exactly where you click, even with snapping on for editing. On: clicks snap using the project's snapping settings. |
 | Show A / B labels on the map line | off | Marks the start (A) and end (B) of the line on the map. Off: only the line. |
 | Profile line | Smooth line | *Smooth line* through the cell values, or *Steps (native cells)*. |
 | X-axis title | Chainage | Title under the plot. Leave it empty to return to the default. |
