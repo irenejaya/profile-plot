@@ -799,3 +799,42 @@ def test_axis_titles_and_line_style_settings(env):
     assert (settings.x_title(), settings.y_title()) == ("Chainage", "Elevation")
     assert (dock.plot.x_title, dock.plot.y_title) == ("Chainage", "Elevation")
     assert dock.plot.line_style == "smooth"
+
+
+def test_ab_labels_setting(env):
+    """A/B labels are off by default (line only) and switch on in Settings."""
+    from profile_plot import settings
+    from profile_plot.settings import SettingsDialog
+    from qgis.core import QgsSettings
+    from qgis.PyQt.QtGui import QImage, QPainter
+    dock = env["plugin"].dock
+    QgsSettings().remove(settings.PREFIX + "showAB")
+    assert settings.show_ab() is False
+    draw(env, [(X0, Y), (X0 + 100, Y)])
+    dock._apply_settings()
+    item = dock.canvas_item
+    assert item.show_ab is False
+
+    calls = []
+    original = item._label
+    item._label = lambda painter, at, text: calls.append(text)
+    try:
+        img = QImage(400, 300, QImage.Format.Format_ARGB32_Premultiplied)
+        p = QPainter(img)
+        item.paint(p)
+        p.end()
+        assert calls == []                       # line only
+        dlg = SettingsDialog(dock)
+        assert dlg.show_ab.isChecked() is False
+        dlg.show_ab.setChecked(True)
+        dlg.accept()
+        dock._apply_settings()
+        assert item.show_ab is True
+        p = QPainter(img)
+        item.paint(p)
+        p.end()
+        assert calls == ["A", "B"]
+    finally:
+        item._label = original
+        settings.set("showAB", False)
+        dock._apply_settings()

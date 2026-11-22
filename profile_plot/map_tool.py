@@ -107,6 +107,7 @@ class ProfileCanvasItem(QgsMapCanvasItem):
         self.tail = None
         self.finished = False
         self.marker = None
+        self.show_ab = False   # A/B labels and end markers (Settings)
         self._font = QFont()
         self._font.setBold(True)
         self.setPos(0, 0)
@@ -166,6 +167,12 @@ class ProfileCanvasItem(QgsMapCanvasItem):
         if dirty:
             self.update(self._rect_of(dirty, 12))
 
+    def set_show_ab(self, show):
+        show = bool(show)
+        if show != self.show_ab:
+            self.show_ab = show
+            self.update()
+
     def clear(self):
         self.points = []
         self.tail = None
@@ -200,17 +207,18 @@ class ProfileCanvasItem(QgsMapCanvasItem):
             dash.setStyle(Qt.PenStyle.DashLine)
             painter.setPen(dash)
             painter.drawLine(pts[-1], t)
-        # vertices
-        painter.setPen(QPen(LINE_COLOR, 1.5))
-        painter.setBrush(QBrush(QColor("#ffffff")))
-        for q in pts[1:-1]:
-            painter.drawEllipse(q, 2.5, 2.5)
-        painter.drawEllipse(pts[0], 4.5, 4.5)
-        if len(pts) > 1:
-            painter.drawEllipse(pts[-1], 4.5, 4.5)
-        self._label(painter, pts[0], "A")
-        if self.finished and len(pts) > 1:
-            self._label(painter, pts[-1], "B")
+        if self.show_ab:
+            # vertices, end markers and the A / B labels
+            painter.setPen(QPen(LINE_COLOR, 1.5))
+            painter.setBrush(QBrush(QColor("#ffffff")))
+            for q in pts[1:-1]:
+                painter.drawEllipse(q, 2.5, 2.5)
+            painter.drawEllipse(pts[0], 4.5, 4.5)
+            if len(pts) > 1:
+                painter.drawEllipse(pts[-1], 4.5, 4.5)
+            self._label(painter, pts[0], "A")
+            if self.finished and len(pts) > 1:
+                self._label(painter, pts[-1], "B")
         if self.marker is not None:
             m = self._px(self.marker)
             painter.setPen(QPen(QColor("#202020"), 1.5))

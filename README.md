@@ -117,10 +117,10 @@ The assigned keys are shown in the icon's and the **Draw line** button's tooltip
 | New profile after finishing | just click again: the tool stays active |
 | Profile an existing line | select a line feature, then click **Use selected line** |
 
-While you draw, the finished part is solid magenta and the moving part is dashed. **A** marks
-the first vertex as soon as you click it; **B** appears at the end when you finish. A is the
-start of chainage (0) and B is the end. The line and labels stay on the map until you start a
-new line or close the dock.
+While you draw, the finished part of the line is solid magenta and the moving part is dashed.
+By default only the line is drawn. To mark the start (**A**, chainage 0) and the end (**B**),
+tick *Show A / B labels on the map line* in Settings. The line stays on the map until you start
+a new line or close the dock.
 
 ## The dock, part by part
 
@@ -274,6 +274,7 @@ Images match what you see, including the legend if it's on.
 | Setting | Default | Effect |
 |---|---|---|
 | Show legend | off | Corner box with each raster and its value at the pointer. |
+| Show A / B labels on the map line | off | Marks the start (A) and end (B) of the line on the map. Off: only the line. |
 | Profile line | Smooth line | *Smooth line* through the cell values, or *Steps (native cells)*. |
 | X-axis title | Chainage | Title under the plot. Leave it empty to return to the default. |
 | Y-axis title | Elevation | Title beside the plot. Leave it empty to return to the default. |
@@ -338,7 +339,7 @@ and 90 ms to all native values.
 | You see | Why / what to do |
 |---|---|
 | What is ΔZ in the footer? | End minus start elevation of the slope layer (B − A). Shown only when a slope layer is selected. |
-| Why A and B on the map? | They mark the start (A, chainage 0) and end (B) of the line, so you can see which way the profile runs. |
+| How do I see which end is chainage 0? | Tick *Show A / B labels on the map line* in Settings: A is the start (chainage 0), B the end. |
 | *Average slope unavailable* | An end of the line is outside the slope raster or on NoData. Move the ends onto data. |
 | *endpoint grade across gap, coverage …* | The ends are valid but the line crosses NoData. The grade uses the two ends. |
 | *Preview from overview — refining…* | Full-resolution values are still loading (large rasters, network drives). It disappears when done; Export CSV waits for it. |

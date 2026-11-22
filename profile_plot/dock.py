@@ -175,8 +175,8 @@ class ProfileDock(QgsDockWidget):
         bar.addWidget(self.image_button)
         bar.addStretch(1)
         self.act_settings = QAction(icons.icon("settings"), "Settings", self)
-        self.act_settings.setToolTip("Profile Plot settings (legend, line, axis titles, units, "
-                                     "slope unit)")
+        self.act_settings.setToolTip("Profile Plot settings (legend, A/B labels, line, axis "
+                                     "titles, units, slope unit)")
         b_set = _tool_button(self.act_settings)
         b_set.setAccessibleName("Profile Plot settings")
         bar.addWidget(b_set)
@@ -375,6 +375,7 @@ class ProfileDock(QgsDockWidget):
     def _ensure_canvas_item(self):
         if self.canvas_item is None:
             self.canvas_item = ProfileCanvasItem(self.canvas)
+            self.canvas_item.set_show_ab(settings.show_ab())
         return self.canvas_item
 
     def _display_transform(self):
@@ -676,6 +677,8 @@ class ProfileDock(QgsDockWidget):
         self.plot.set_show_legend(settings.show_legend())
         self.plot.set_line_style(settings.line_style())
         self.plot.set_axis_titles(settings.x_title(), settings.y_title())
+        if self.canvas_item is not None:
+            self.canvas_item.set_show_ab(settings.show_ab())
         self.raster_panel.set_show_units(show)
         self._update_footer()
         self._refresh_table()

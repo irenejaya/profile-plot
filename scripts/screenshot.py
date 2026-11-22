@@ -73,7 +73,8 @@ def main():
     dock.act_cross.setChecked(True)
     from profile_plot import settings
     # Defaults, so the screenshots show what a new user sees
-    for key, value in (("showLegend", False), ("showUnits", False), ("unit", "m"),
+    for key, value in (("showLegend", False), ("showAB", False), ("showUnits", False),
+                       ("unit", "m"),
                        ("slopeUnit", "%"), ("lineStyle", "smooth"),
                        ("xTitle", "Chainage"), ("yTitle", "Elevation")):
         settings.set(key, value)

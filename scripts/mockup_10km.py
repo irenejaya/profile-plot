@@ -138,8 +138,10 @@ def main():
     iface.canvas.setLayers([wse, dem, shade])
 
     from profile_plot import classFactory, settings
-    settings.set("showLegend", False)
-    settings.set("slopeUnit", "%")
+    for key, value in (("showLegend", False), ("showAB", False), ("slopeUnit", "%"),
+                       ("lineStyle", "smooth"), ("xTitle", "Chainage"),
+                       ("yTitle", "Elevation"), ("showUnits", False)):
+        settings.set(key, value)
     plugin = classFactory(iface)
     plugin.initGui()
     plugin.run()

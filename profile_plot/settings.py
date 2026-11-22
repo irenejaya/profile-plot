@@ -57,6 +57,10 @@ DEFAULT_X_TITLE = "Chainage"
 DEFAULT_Y_TITLE = "Elevation"
 
 
+def show_ab():
+    return get("showAB", False, bool)
+
+
 def line_style():
     style = get("lineStyle", "smooth", str)
     return style if style in dict(LINE_STYLES) else "smooth"
@@ -76,7 +80,7 @@ def slope_unit():
 
 
 class SettingsDialog(QDialog):
-    """Legend (off by default), profile line style (smooth by default),
+    """Legend and A/B map labels (both off by default), profile line style (smooth by default),
     axis titles (Chainage / Elevation by default), units (hidden by
     default; when shown, chainage is in metres and the elevation unit is
     the text entered here, default "m") and the slope unit (% by default,
@@ -92,6 +96,11 @@ class SettingsDialog(QDialog):
                                     "at the pointer")
         self.show_legend.setChecked(show_legend())
         form.addRow(self.show_legend)
+        self.show_ab = QCheckBox("Show A / B labels on the map line")
+        self.show_ab.setToolTip("Mark the start (A) and end (B) of the line on the map.\n"
+                                "Off: only the line is drawn.")
+        self.show_ab.setChecked(show_ab())
+        form.addRow(self.show_ab)
         self.line_style = QComboBox()
         for key, label in LINE_STYLES:
             self.line_style.addItem(label, key)
@@ -132,6 +141,7 @@ class SettingsDialog(QDialog):
 
     def accept(self):
         set("showLegend", self.show_legend.isChecked())
+        set("showAB", self.show_ab.isChecked())
         set("lineStyle", self.line_style.currentData())
         set("xTitle", self.x_title.text().strip() or DEFAULT_X_TITLE)
         set("yTitle", self.y_title.text().strip() or DEFAULT_Y_TITLE)
