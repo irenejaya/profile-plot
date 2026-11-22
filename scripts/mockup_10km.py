@@ -14,11 +14,11 @@ import sys
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(HERE, "..", "tests"))
+sys.path.insert(0, os.path.join(HERE, "..", "tests", "qgis"))
 sys.path.insert(0, HERE)
 
 import numpy as np  # noqa: E402
-import qgis_harness as H  # noqa: E402
+import harness as H  # noqa: E402
 from osgeo import gdal, osr  # noqa: E402
 
 W, HGT = 10400, 2600           # 1 m cells
@@ -137,7 +137,8 @@ def main():
     H.setup_canvas(iface, QgsRectangle(OX - 100, OY - HGT - 100, OX + W + 100, OY + 100))
     iface.canvas.setLayers([wse, dem, shade])
 
-    from profile_plot import classFactory, settings
+    from profile_plot import classFactory
+    from profile_plot.core import settings
     for key, value in (("showLegend", False), ("showAB", False), ("slopeUnit", "%"),
                        ("lineStyle", "smooth"), ("xTitle", "Chainage"),
                        ("yTitle", "Elevation"), ("showUnits", False)):

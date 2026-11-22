@@ -11,13 +11,14 @@ import threading
 import numpy as np
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)
 
-from profile_plot import sampling  # noqa: E402
-from profile_plot.sampling import OUTSIDE  # noqa: E402
+from core import sampling  # noqa: E402
+from core.sampling import OUTSIDE  # noqa: E402
 
 gdal = pytest.importorskip("osgeo.gdal")
-from profile_plot import readers  # noqa: E402
+from core import readers  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -376,8 +377,7 @@ def test_package_zip_installs_as_profile_plot(tmp_path):
     repository would give 'profile-plot/profile_plot' and fail to load)."""
     import subprocess
     import zipfile
-    root = os.path.join(os.path.dirname(__file__), "..")
-    out = subprocess.run([sys.executable, os.path.join(root, "scripts", "package.py"),
+    out = subprocess.run([sys.executable, os.path.join(ROOT, "scripts", "package.py"),
                           str(tmp_path)], capture_output=True, text=True, check=True)
     path = out.stdout.strip().splitlines()[-1]
     with zipfile.ZipFile(path) as zf:
@@ -385,6 +385,11 @@ def test_package_zip_installs_as_profile_plot(tmp_path):
     meta = sorted(n for n in names if n.endswith("metadata.txt"))
     assert os.path.split(meta[0])[0] == "profile_plot"     # QGIS installer rule
     assert all(n.startswith("profile_plot/") for n in names)
-    assert "profile_plot/__init__.py" in names
+    for required in ("profile_plot/__init__.py", "profile_plot/plugin.py",
+                     "profile_plot/metadata.txt", "profile_plot/icon.svg",
+                     "profile_plot/core/sampling.py", "profile_plot/ui/dock.py",
+                     "profile_plot/icons/hover.svg"):
+        assert required in names
     assert not any("__pycache__" in n or n.endswith(".pyc") for n in names)
-    assert not any(n.startswith(("profile_plot/tests", "profile_plot/docs")) for n in names)
+    assert not any(n.startswith(("profile_plot/tests", "profile_plot/docs",
+                                 "profile_plot/scripts", "profile_plot/dist")) for n in names)

@@ -24,10 +24,10 @@ import sys
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(HERE, "..", "tests"))
+sys.path.insert(0, os.path.join(HERE, "..", "tests", "qgis"))
 
 import numpy as np  # noqa: E402
-import qgis_harness as H  # noqa: E402
+import harness as H  # noqa: E402
 from osgeo import gdal, osr  # noqa: E402
 
 

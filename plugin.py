@@ -10,10 +10,11 @@ a new line.
 from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtGui import QKeySequence
 
-from . import icons
-from .compat import QAction
+from .core.compat import QAction
+from .ui import icons
 
 ACTION_NAME = "mActionProfilePlot"
+TOOLBAR_NAME = "ProfilePlotToolbar"
 MENU = "&Profile Plot"
 
 
@@ -22,6 +23,7 @@ class ProfilePlotPlugin:
     def __init__(self, iface):
         self.iface = iface
         self.action = None
+        self.toolbar = None
         self.dock = None
 
     # -- QGIS hooks -----------------------------------------------------------
@@ -35,7 +37,12 @@ class ProfilePlotPlugin:
         self.action.triggered.connect(self.run)
         # Register in Settings > Keyboard Shortcuts with no default key.
         self.iface.registerMainWindowAction(self.action, "")
-        self.iface.addToolBarIcon(self.action)
+        # Its own toolbar (not the shared Plugins toolbar); QGIS remembers
+        # where the user puts it through the object name.
+        self.toolbar = self.iface.addToolBar("Profile Plot")
+        self.toolbar.setObjectName(TOOLBAR_NAME)
+        self.toolbar.setToolTip("Profile Plot")
+        self.toolbar.addAction(self.action)
         self.iface.addPluginToRasterMenu(MENU, self.action)
         self.action.changed.connect(self._update_tooltip)
         self._update_tooltip()
@@ -53,9 +60,15 @@ class ProfilePlotPlugin:
                 pass
             self.iface.unregisterMainWindowAction(self.action)
             self.iface.removePluginRasterMenu(MENU, self.action)
-            self.iface.removeToolBarIcon(self.action)
             self.action.deleteLater()
             self.action = None
+        if self.toolbar is not None:
+            self.iface.mainWindow().removeToolBar(self.toolbar)
+            # Detach now (deleteLater only runs on the next event loop pass)
+            # so a plugin reload never finds a stale toolbar.
+            self.toolbar.setParent(None)
+            self.toolbar.deleteLater()
+            self.toolbar = None
 
     # -- behaviour --------------------------------------------------------------
 
@@ -69,7 +82,7 @@ class ProfilePlotPlugin:
 
     def _ensure_dock(self):
         if self.dock is None:
-            from .dock import ProfileDock
+            from .ui.dock import ProfileDock
             self.dock = ProfileDock(self.iface, self.action)
             self.iface.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.dock)
         return self.dock

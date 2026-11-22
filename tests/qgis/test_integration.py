@@ -13,7 +13,7 @@ import pytest
 
 qgis_core = pytest.importorskip("qgis.core")
 
-import qgis_harness as H  # noqa: E402
+import harness as H  # noqa: E402
 from qgis.core import (  # noqa: E402
     QgsCoordinateReferenceSystem,
     QgsFeature,
@@ -30,6 +30,8 @@ from qgis.PyQt.QtGui import QKeySequence  # noqa: E402
 @pytest.fixture(scope="module")
 def env(tmp_path_factory):
     app = H.app()
+    from qgis.core import QgsSettings
+    QgsSettings().remove("ProfilePlot")     # start every run from the defaults
     folder = str(tmp_path_factory.mktemp("rasters"))
     paths = H.make_creek_rasters(folder)
     QgsProject.instance().removeAllMapLayers()
@@ -185,7 +187,7 @@ def test_table_and_csv_agree_with_inspection(env, tmp_path):
     assert tbl.kind == "intervals"
     assert tbl.names == ["LiDAR DEM", "1% AEP WSE", "5% AEP WSE"]
     path = str(tmp_path / "p.csv")
-    from profile_plot.table_view import write_csv
+    from profile_plot.core.export import write_csv
     n = write_csv(path, tbl, False, "m", [np.float32] * 3)
     assert n == tbl.row_count
     with open(path) as fh:
@@ -204,7 +206,7 @@ def test_table_and_csv_agree_with_inspection(env, tmp_path):
             else:
                 assert csv_v == "NoData"
     # Units in headings when switched on
-    from profile_plot.table_view import headers
+    from profile_plot.core.export import headers
     assert headers(tbl, True, "m AHD")[:3] == ["From (m)", "To (m)", "LiDAR DEM (m AHD)"]
 
 
@@ -225,6 +227,7 @@ def test_export_temporary_layer(env):
 
 
 def test_hover_and_crosshair_overlay(env):
+    from qgis.PyQt.QtGui import QColor
     dock = env["plugin"].dock
     plot = dock.plot
     dock.resize(1000, 330)
@@ -237,15 +240,29 @@ def test_hover_and_crosshair_overlay(env):
     px, py = plot._to_px(50.0, dem.value_at(50.0))
     plot._cursor = QPointF(px, py)
     plot.set_mode("crosshair")
-    img = plot.grab()
-    assert not img.isNull()
-    # Hover on the DEM curve hits the DEM series
+    assert not plot.grab().isNull()
+    # Hover: one row per raster with a value, just coloured dot + value,
+    # highest first; rasters without a value at that chainage are left out
     plot.set_mode("hover")
-    hit = plot._hit_test(px, py)
-    assert hit is not None and hit[0].uid == s.rasters[0].uid
-    assert hit[1] == pytest.approx(dem.value_at(50.0))
-    # Far from any curve: no hit
-    assert plot._hit_test(px, plot._plot_rect.bottom() - 2) is None
+    rows = plot.hover_rows(50.0)
+    expected = sorted((p.value_at(50.0), e.color.name())
+                      for e, p in ((e, s.profiles[e.uid]) for e in s.rasters
+                                   if e.visible and e.uid in s.profiles)
+                      if np.isfinite(p.value_at(50.0)))[::-1]
+    assert [(c.name(), t) for c, t in rows] == [(c, "{:.2f}".format(v)) for v, c in expected]
+    assert all(not any(ch.isalpha() for ch in t) for _, t in rows)   # no names
+    assert len(plot.hover_rows(5.0)) == 1          # only the DEM has data at 5 m
+    assert plot.hover_chainage_text(316.1) == "316.10"
+    # The dashed guide is drawn the full height at the pointer, in both
+    # halves of the plot (not only near a curve)
+    img = plot.grab().toImage()
+    r = plot._plot_rect
+    dpr = img.devicePixelRatio()
+    col = int(round(px * dpr))
+    bg = QColor(img.pixel(col + int(8 * dpr), int((r.top() + r.height() * 0.85) * dpr)))
+    marks = [QColor(img.pixel(col, int(y * dpr))) != bg
+             for y in np.linspace(r.top() + r.height() * 0.6, r.bottom() - 3, 40)]
+    assert sum(marks) >= 8
     plot._cursor = None
 
 
@@ -376,7 +393,7 @@ def test_raster_in_other_crs(env, tmp_path):
 
 
 def test_units_setting(env):
-    from profile_plot import settings
+    from profile_plot.core import settings
     dock = env["plugin"].dock
     settings.set("showUnits", True)
     settings.set("unit", "m AHD")
@@ -431,7 +448,7 @@ def test_temporary_layer_and_image_export_buttons(env):
 
 
 def test_color_presets_then_red(env):
-    from profile_plot.session import OVERFLOW_COLOR, PRESET_COLORS
+    from profile_plot.core.session import OVERFLOW_COLOR, PRESET_COLORS
     from qgis.PyQt.QtGui import QColor
     s = env["plugin"].dock.session
     assert PRESET_COLORS[0] == "#8c5a2b" and len(PRESET_COLORS) == 6
@@ -470,8 +487,8 @@ def test_color_box_changes_curve_colour_without_rebuilding(env):
 
 
 def test_legend_is_a_settings_tickbox(env):
-    from profile_plot import settings
-    from profile_plot.settings import SettingsDialog
+    from profile_plot.core import settings
+    from profile_plot.ui.settings_dialog import SettingsDialog
     dock = env["plugin"].dock
     assert not hasattr(dock, "act_legend")          # no toolbar icon
     dlg = SettingsDialog(dock)
@@ -490,8 +507,8 @@ def test_legend_is_a_settings_tickbox(env):
 
 
 def test_slope_unit_setting(env):
-    from profile_plot import settings
-    from profile_plot.settings import SettingsDialog
+    from profile_plot.core import settings
+    from profile_plot.ui.settings_dialog import SettingsDialog
     from qgis.core import QgsSettings
     dock = env["plugin"].dock
     s = dock.session
@@ -527,7 +544,7 @@ def test_legend_has_no_chainage_title(env):
 
 
 def test_raster_box_is_a_table(env):
-    from profile_plot.raster_list import (COL_CELL, COL_COLOR, COL_NAME, COL_VISIBLE,
+    from profile_plot.ui.raster_list import (COL_CELL, COL_COLOR, COL_NAME, COL_VISIBLE,
                                           GridDelegate, MergedHeader)
     tree = env["plugin"].dock.raster_panel.tree
     assert isinstance(tree.itemDelegate(), GridDelegate)
@@ -552,9 +569,9 @@ def test_raster_box_is_a_table(env):
 
 
 def test_legend_hidden_by_default(tmp_path):
-    from profile_plot.plot_widget import ProfilePlotWidget
+    from profile_plot.ui.plot_widget import ProfilePlotWidget
     assert ProfilePlotWidget().show_legend is False
-    from profile_plot import settings
+    from profile_plot.core import settings
     from qgis.core import QgsSettings
     QgsSettings().remove(settings.PREFIX + "showLegend")
     assert settings.get("showLegend", False, bool) is False
@@ -564,10 +581,10 @@ def test_tooltip_formats(env):
     plot = env["plugin"].dock.plot
     plot.set_units(False, "m")
     assert plot.crosshair_text(50.0, -100.0) == "x[50.00], y[-100.00]"
-    assert plot.hover_text(50.0, 100.0) == "x[50.00], y[100.00]"
+    assert plot.hover_chainage_text(50.0) == "50.00"
     plot.set_units(True, "m AHD")
     assert plot.crosshair_text(50.0, 78.5) == "x[50.00 m], y[78.50 m AHD]"
-    assert plot.hover_text(50.0, 78.5) == "x[50.00 m], y[78.50 m AHD]"
+    assert plot.hover_chainage_text(50.0) == "50.00 m"
     plot.set_units(False, "m")
 
 
@@ -588,8 +605,8 @@ def test_image_export(env, tmp_path):
 def test_slope_selector_matches_raster_box(env):
     """Same swatch as the raster rows, full width under the raster box, and
     the full name fits in the compact footer."""
-    from profile_plot import icons
-    from profile_plot.raster_list import ColorSwatchButton
+    from profile_plot.ui import icons
+    from profile_plot.ui.raster_list import ColorSwatchButton
     dock = env["plugin"].dock
     panel = dock.raster_panel
     s = dock.session
@@ -699,7 +716,7 @@ def test_map_marker_on_line_still_being_drawn(env):
 
 
 def test_minor_grid_spacing():
-    from profile_plot.plot_widget import minor_step, minor_ticks
+    from profile_plot.ui.plot_widget import minor_step, minor_ticks
     assert minor_step(20, 7.6) == 1.0          # 100 m profile: every 1 m
     assert minor_step(1, 55) == pytest.approx(0.2)
     assert minor_step(2000, 0.076) == pytest.approx(200)   # 10 km: legible
@@ -730,7 +747,7 @@ def test_end_tick_label_inside_plot(env):
 
 
 def _steps_profile(x0, x1, v):
-    from profile_plot.assembly import RasterProfile
+    from profile_plot.core.assembly import RasterProfile
     x0 = np.asarray(x0, float)
     x1 = np.asarray(x1, float)
     v = np.asarray(v, float)
@@ -739,7 +756,7 @@ def _steps_profile(x0, x1, v):
 
 def test_smooth_line_through_cell_centres_and_steps_option():
     from qgis.PyQt.QtCore import QRectF
-    from profile_plot.plot_widget import series_polylines
+    from profile_plot.ui.plot_widget import series_polylines
     prof = _steps_profile([0, 1, 2], [1, 2, 3], [10, 12, 11])
     rect = QRectF(0, 0, 300, 100)          # 100 px per metre, y 10..12 -> 0..100
     smooth = series_polylines(prof, 0, 3, 10, 12, rect, "smooth")
@@ -754,7 +771,7 @@ def test_zoomed_out_line_is_smooth_and_keeps_spikes():
     """The zoomed-out drawing keeps points at their true chainage (a ramp
     stays a straight diagonal, not vertical bars) and keeps narrow spikes."""
     from qgis.PyQt.QtCore import QRectF
-    from profile_plot.plot_widget import series_polylines
+    from profile_plot.ui.plot_widget import series_polylines
     n = 100000                              # 10 km of 0.1 m cells
     x0 = np.arange(n) * 0.1
     v = x0 * 0.01                            # a smooth 1 % ramp, 0..100
@@ -775,8 +792,8 @@ def test_zoomed_out_line_is_smooth_and_keeps_spikes():
 
 
 def test_axis_titles_and_line_style_settings(env):
-    from profile_plot import settings
-    from profile_plot.settings import SettingsDialog
+    from profile_plot.core import settings
+    from profile_plot.ui.settings_dialog import SettingsDialog
     dock = env["plugin"].dock
     dlg = SettingsDialog(dock)
     assert dlg.x_title.text() == "Chainage" and dlg.y_title.text() == "Elevation"
@@ -803,8 +820,8 @@ def test_axis_titles_and_line_style_settings(env):
 
 def test_ab_labels_setting(env):
     """A/B labels are off by default (line only) and switch on in Settings."""
-    from profile_plot import settings
-    from profile_plot.settings import SettingsDialog
+    from profile_plot.core import settings
+    from profile_plot.ui.settings_dialog import SettingsDialog
     from qgis.core import QgsSettings
     from qgis.PyQt.QtGui import QImage, QPainter
     dock = env["plugin"].dock
@@ -838,3 +855,72 @@ def test_ab_labels_setting(env):
         item._label = original
         settings.set("showAB", False)
         dock._apply_settings()
+
+
+def test_own_toolbar(env):
+    """The action lives in its own 'Profile Plot' toolbar, not the shared
+    Plugins toolbar."""
+    from qgis.PyQt.QtWidgets import QToolBar
+    plugin = env["plugin"]
+    tb = plugin.toolbar
+    assert isinstance(tb, QToolBar)
+    assert tb.objectName() == "ProfilePlotToolbar"
+    assert tb.windowTitle() == "Profile Plot"
+    assert plugin.action in tb.actions()
+    assert env["iface"].mw.findChild(QToolBar, "ProfilePlotToolbar") is tb
+
+
+def test_closing_the_dock_resets_the_tool(env):
+    """Close the dock: the line, plot, table, rasters and slope layer are
+    gone and it reopens empty.  (Last test: it restores the rasters.)"""
+    plugin = env["plugin"]
+    dock = plugin.dock
+    s = dock.session
+
+    def alive():
+        out = []
+        for lyr in env["layers"]:
+            try:
+                if QgsProject.instance().mapLayer(lyr.id()) is not None:
+                    out.append(lyr)
+            except RuntimeError:      # deleted by an earlier test
+                pass
+        return out
+    if not s.rasters:
+        s.add_layers(alive())
+    s.set_slope(s.rasters[0].uid)
+    draw(env, [(X0, Y), (X0 + 60, Y)])
+    assert s.profiles and s.has_line and dock.canvas_item.points
+    cache_before = len(s.engine.cache)
+    assert cache_before > 0
+    dock.close()
+    env["app"].processEvents()
+    assert not s.rasters and not s.profiles and not s.has_line
+    assert s.slope_uid is None
+    assert dock.raster_panel.tree.topLevelItemCount() == 0
+    assert dock.raster_panel.slope_combo.currentText() == "(none)"
+    assert dock.plot.series == []
+    assert dock.canvas_item.points == [] and not dock.canvas_item.isVisible()
+    assert len(s.engine.cache) == 0
+    assert env["iface"].canvas.mapTool() is not dock.map_tool
+    # Reopen with the icon/shortcut: empty dock, nothing plotted
+    plugin.run()
+    env["app"].processEvents()
+    assert dock.isVisible() and not s.rasters and not s.has_line
+    assert "Add rasters" in dock.plot.placeholder
+    # restore for any later tests
+    s.add_layers(alive())
+
+
+def test_unload_removes_toolbar_and_reload_has_one(tmp_path):
+    """Unload detaches the toolbar at once; loading again gives exactly one."""
+    from qgis.PyQt.QtWidgets import QToolBar
+    from profile_plot import classFactory
+    iface = H.FakeIface()
+    for _ in range(2):
+        plugin = classFactory(iface)
+        plugin.initGui()
+        bars = iface.mw.findChildren(QToolBar, "ProfilePlotToolbar")
+        assert len(bars) == 1
+        plugin.unload()
+        assert iface.mw.findChildren(QToolBar, "ProfilePlotToolbar") == []

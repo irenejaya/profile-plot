@@ -55,7 +55,9 @@ to see each cell as a flat step, choose *Profile line: Steps* in Settings.
 * **Native-cell sampling.** Every cell the line crosses is kept, including a short diagonal clip
   through a narrow kerb or embankment. Optional 1 cm stations, with or without bilinear
   interpolation.
-* **Hover and crosshair inspection.** A yellow dot marks the same station on the map.
+* **Hover and crosshair inspection.** Hover shows a vertical guide with every plot's value;
+  crosshair shows the chainage and elevation at the cursor. A yellow dot marks the same station
+  on the map.
 * **Optional slope layer.** Live length, ΔZ and average slope, in % or m/m.
 * **Exports.** A table tab with CSV export, the line as a temporary layer, and the plot as PNG,
   JPEG, SVG or clipboard.
@@ -65,28 +67,25 @@ to see each cell as a flat step, choose *Profile line: Steps* in Settings.
 
 **Requirements:** QGIS 3.34 or newer, including QGIS 4 (Qt6).
 
+The repository root *is* the plugin (`__init__.py`, `plugin.py`, `metadata.txt`, `icon.svg`,
+`core/`, `ui/`, `icons/`), so any of these work:
+
 | Method | Steps |
 |---|---|
-| From ZIP | In QGIS: *Plugins ▸ Manage and Install Plugins ▸ Install from ZIP*, choose `profile_plot-1.0.zip`, then *Install Plugin*. |
-| From source | Copy or symlink **only the inner `profile_plot` folder** into your profile's plugin folder, then enable **Profile Plot** in the Plugin Manager. Find the profile folder with *Settings ▸ User Profiles ▸ Open Active Profile Folder*, then `python/plugins`. |
-| Build the ZIP | `python3 scripts/package.py` writes `dist/profile_plot-<version>.zip`. |
+| Plugin ZIP (recommended) | `python3 scripts/package.py` writes `dist/profile_plot-1.0.zip` (top folder `profile_plot`, without tests and docs). In QGIS: *Plugins ▸ Manage and Install Plugins ▸ Install from ZIP*, choose it, then *Install Plugin*. |
+| GitHub *Download ZIP* | *Code ▸ Download ZIP* on GitHub, then *Install from ZIP* as above. QGIS installs it as `profile-plot-main`. |
+| Git clone | Clone into your plugins folder as `profile_plot`: `git clone https://github.com/irenejaya/profile-plot.git profile_plot`. Find the plugins folder with *Settings ▸ User Profiles ▸ Open Active Profile Folder*, then `python/plugins`. Enable **Profile Plot** in the Plugin Manager. |
 
-> **Use the plugin ZIP, not a ZIP of this repository.** Inside `profile_plot-1.0.zip` the
-> top folder is `profile_plot`, which is what QGIS expects. Two things look similar but fail:
->
-> * zipping the repository folder;
-> * GitHub's *Code ▸ Download ZIP*.
->
-> Both add an extra top folder (`profile-plot/` or `profile-plot-main/`), and QGIS then
-> reports `ModuleNotFoundError: No module named 'profile-plot/profile_plot'`. See
-> [Troubleshooting](#troubleshooting) to clean up.
+Use one method only. Installing a second way adds a second copy (for example `profile_plot`
+and `profile-plot-main`), so uninstall the first one before switching.
 
-After installing, the **Profile Plot** icon appears on the Plugins toolbar and under
-*Raster ▸ Profile Plot*.
+After installing, the **Profile Plot** icon appears on its own **Profile Plot** toolbar (show
+or hide it under *View ▸ Toolbars*) and under *Raster ▸ Profile Plot*.
 
 ## Quick start
 
-1. **Open:** click the Profile Plot icon. The dock opens at the bottom of the window.
+1. **Open:** click the Profile Plot icon on the Profile Plot toolbar. The dock opens at the
+   bottom of the window.
 2. **Add rasters:** click the green **+** and tick one or more rasters. You can also drag
    layers into the dock from the Layers panel or the Browser.
 3. **Draw:** click the icon again (or press your shortcut, or click **Draw line**). Click
@@ -94,6 +93,9 @@ After installing, the **Profile Plot** icon appears on the Plugins toolbar and u
 
 The profile is ready as soon as you finish, usually within a fraction of a second. To check
 another spot, just click on the map again.
+
+**Closing the dock resets the tool:** the line, the plot, the table, the raster list and the
+slope layer are cleared, so the next time you open it you start fresh. Your Settings are kept.
 
 ## Assign your shortcut
 
@@ -169,7 +171,8 @@ a new line or close the dock.
   | 7th onwards | red |
 
   You can change any of them.
-* The list starts empty in each session. The panel widens to fit long names.
+* The list starts empty each time you open the dock (closing the dock clears it). The panel
+  widens to fit long names.
 
 ### Slope layer
 
@@ -191,7 +194,7 @@ grade.
 | Mode | Tooltip | Shown |
 |---|---|---|
 | **Crosshair** | `x[50.00], y[78.50]` on translucent white: chainage and elevation at the cursor, also between curves | whenever the pointer is in the plot |
-| **Hover** | `x[50.00], y[78.50]` in the line's colour: chainage and that line's value | only while pointing at a curve |
+| **Hover** | A dashed vertical guide at the pointer. A box at the top lists the value of each plot at that chainage: a coloured dot and the value, highest first, no names. The chainage itself shows in a dark label on the X axis. | whenever the pointer is in the plot |
 
 * **Map marker:** in both modes a yellow dot marks the same station on the map line, even on a
   line you are still drawing. It disappears when the pointer leaves the plot.
@@ -293,7 +296,7 @@ Images match what you see, including the legend if it's on.
 | Slope unit | % | Average slope in % or m/m. |
 
 Settings, the inspection mode and the sampling mode are remembered between sessions. The
-raster list is not.
+raster list, the line and the plot are not: closing the dock clears them.
 
 ## Rasters, CRSs and accuracy
 
@@ -357,13 +360,13 @@ and 90 ms to all native values.
 | The icon only opens the dock | No rasters are added yet. Click **+** first. |
 | *Cannot read this raster* | The source isn't readable. Check the file path or connection in the layer's properties. |
 | Shortcut does nothing | Assign it first (see [Assign your shortcut](#assign-your-shortcut)), or check for a clash in *Keyboard Shortcuts*. |
-| `Couldn't load plugin 'profile-plot/profile_plot'` / `No module named 'profile-plot/profile_plot'` | A ZIP of the whole repository was installed instead of the plugin ZIP. Close QGIS and delete the folder `profile-plot` (or `profile-plot-main`) from `…\QGIS3\profiles\default\python\plugins`. Then start QGIS and *Install from ZIP* with `profile_plot-1.0.zip` (top folder `profile_plot`). |
+| `Couldn't load plugin 'profile-plot/profile_plot'` / `No module named 'profile-plot/profile_plot'` | An older copy of this repository, from when the plugin sat in a subfolder, was installed. Close QGIS and delete the folder `profile-plot` from `…\QGIS3\profiles\default\python\plugins`. Then install again using one of the methods in [Install](#install). |
 | Plugin Manager says the version is older | You installed a test build with a higher number. Uninstall Profile Plot, then install the ZIP. Your settings are kept. |
 
 ## Development
 
 ```bash
-# unit tests + headless QGIS integration tests (QGIS Python bindings required)
+# unit tests (tests/) + headless QGIS tests (tests/qgis/, needs the QGIS Python bindings)
 QT_QPA_PLATFORM=offscreen python3 -m pytest tests
 
 # speed benchmark (writes ~1 GB of 1 cm test rasters to OUT_DIR)
@@ -379,23 +382,32 @@ python3 scripts/package.py
 
 ### Project layout
 
-| File | Role |
+The layout follows the usual QGIS plugin repository shape: the root is the plugin package.
+
+| Path | Role |
 |---|---|
-| `plugin.py` | QGIS entry point: the shared action, menu and toolbar icon |
-| `dock.py` | The dock: toolbar, raster panel, plot, footer, table tab |
-| `session.py` | Rasters, the line, background jobs and profile assembly |
-| `sampling.py` | Pure-numpy kernels: grid traversal, stations, bilinear, grade |
-| `readers.py` | GDAL / QGIS tile reading, tile cache, dataset pool |
-| `engine.py` | Worker threads with priorities and cancellation |
-| `assembly.py` | Joins pieces into profiles; grade; table rows |
-| `geometry.py` | CRS choice, chainage, densified pixel-space pieces |
-| `plot_widget.py` | QPainter chart: cache, decimation, hover / crosshair, export |
-| `map_tool.py` | Line capture tool and the map overlay (line, A/B, marker) |
-| `raster_list.py` | Raster table, colour boxes, slope selector, Add raster dialog |
-| `table_view.py` | Table tab and CSV writer |
-| `settings.py` | Settings and the settings dialog |
-| `export.py` | Export the line to a temporary layer |
-| `compat.py` | Small helpers so one code base runs on Qt5 and Qt6 |
+| `__init__.py` | QGIS entry point (`classFactory`) |
+| `plugin.py` | The shared action, the Profile Plot toolbar and the Raster menu entry |
+| `metadata.txt`, `icon.svg` | Plugin metadata and icon |
+| `core/sampling.py` | Pure-numpy kernels: grid traversal, stations, bilinear, grade |
+| `core/readers.py` | GDAL / QGIS tile reading, tile cache, dataset pool |
+| `core/engine.py` | Worker threads with priorities and cancellation |
+| `core/session.py` | Rasters, the line, background jobs, profile assembly, reset |
+| `core/assembly.py` | Joins pieces into profiles; grade; table rows |
+| `core/geometry.py` | CRS choice, chainage, densified pixel-space pieces |
+| `core/export.py` | Temporary layer export and the CSV writer |
+| `core/settings.py` | Stored preferences |
+| `core/compat.py` | Small helpers so one code base runs on Qt5 and Qt6 |
+| `ui/dock.py` | The dock: toolbar, raster panel, plot, footer, table tab |
+| `ui/plot_widget.py` | QPainter chart: cache, simplification, hover / crosshair, export |
+| `ui/map_tool.py` | Line capture tool and the map overlay (line, A/B, marker) |
+| `ui/raster_list.py` | Raster table, colour boxes, slope selector, Add raster dialog |
+| `ui/table_view.py` | Table tab |
+| `ui/settings_dialog.py` | The settings dialog |
+| `ui/icons.py`, `icons/` | Icons (QGIS theme icons where available) |
+| `scripts/` | `package.py` (plugin ZIP), `benchmark.py`, `screenshot.py`, `mockup_10km.py` |
+| `tests/` | Unit tests; `tests/qgis/` holds the headless QGIS tests and their harness |
+| `docs/images/` | Screenshots used in this README |
 
 ### What the tests cover
 
@@ -407,6 +419,7 @@ python3 scripts/package.py
 * The shortcut tooltips.
 * Exported vertices, direction and CRS.
 * Settings, colours, tooltips, image export and the map marker, driven by real mouse events.
+* The plugin ZIP layout, the own toolbar, and the reset when the dock is closed.
 
 ## License
 

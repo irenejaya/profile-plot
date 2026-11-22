@@ -606,6 +606,24 @@ class ProfileSession(QObject):
         self._schedule()
         return True
 
+    def reset(self):
+        """Forget everything that was plotted: the line, the profiles, the
+        raster list and the slope layer, and free cached tiles.  Used when
+        the dock is closed, so it reopens empty."""
+        self.clear_line()
+        rasters, self.rasters = self.rasters, []
+        for e in rasters:
+            self._release(e)
+        self.slope_uid = None
+        self._tails.clear()
+        self._assemblers.clear()
+        self._errors_reported.clear()
+        self.engine.cache.clear()
+        self.engine.pool.close_all()
+        self.rastersChanged.emit()
+        self.slopeChanged.emit()
+        self.profilesChanged.emit()
+
     def clear_line(self):
         self._provisional = {}
         self._cancel_all_jobs()

@@ -16,7 +16,9 @@ try:
 except ImportError:  # pragma: no cover
     QSvgRenderer = None
 
-ICON_DIR = os.path.join(os.path.dirname(__file__), "icons")
+# Plugin root (one level up from ui/) holds icon.svg and the icons/ folder.
+PLUGIN_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ICON_DIR = os.path.join(PLUGIN_DIR, "icons")
 
 # name -> (QGIS theme icon candidates, bundled fallback)
 _MAP = {
@@ -38,7 +40,7 @@ _MAP = {
     "remove": (["/mActionRemove.svg", "/symbologyRemove.svg"], None),
     "up": (["/mActionArrowUp.svg"], None),
     "down": (["/mActionArrowDown.svg"], None),
-    "plugin": ([], "profile_plot.svg"),
+    "plugin": ([], "../icon.svg"),
 }
 
 _cache = {}

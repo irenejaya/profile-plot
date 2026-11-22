@@ -28,16 +28,17 @@ from qgis.PyQt.QtWidgets import (
     QWidget,
 )
 
-from . import icons, settings
-from .export import export_alignment
+from ..core import settings
+from ..core.compat import QAction, QActionGroup
+from ..core.export import export_alignment, write_csv
+from ..core.sampling import grade_ratio_text
+from ..core.session import ProfileSession
+from . import icons
 from .map_tool import ProfileCanvasItem, ProfileMapTool
 from .plot_widget import ProfilePlotWidget, SeriesView
 from .raster_list import AddRasterDialog, RasterPanel, layers_from_mime, mime_has_rasters
-from .sampling import grade_ratio_text
-from .session import ProfileSession
-from .table_view import TablePanel, write_csv
+from .table_view import TablePanel
 
-from .compat import QAction, QActionGroup
 
 MINUS = "−"
 
@@ -664,7 +665,7 @@ class ProfileDock(QgsDockWidget):
             "Profile Plot", "Exported {:,} rows to {}".format(n, path), Qgis.MessageLevel.Success, 4)
 
     def open_settings(self):
-        from .settings import SettingsDialog
+        from .settings_dialog import SettingsDialog
         dlg = SettingsDialog(self)
         if dlg.exec():
             self._apply_settings()
@@ -726,10 +727,18 @@ class ProfileDock(QgsDockWidget):
                                             levels.get(level, Qgis.MessageLevel.Info), 5)
 
     def _on_closed_state(self, closed):
+        """Closing the dock resets the tool: nothing that was plotted is
+        kept, so it reopens empty.  Settings are preferences and stay."""
         if closed:
             self._exit_tool()
+            self.map_tool.drawing = False
+            self.session.reset()
+            self.plot.reset_view()
             if self.canvas_item is not None:
+                self.canvas_item.clear()
                 self.canvas_item.setVisible(False)
+            self.tabs.setCurrentIndex(0)
+            self._refresh_table()
         elif self.canvas_item is not None:
             self.canvas_item.setVisible(True)
 

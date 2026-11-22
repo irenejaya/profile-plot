@@ -26,9 +26,8 @@ from qgis.PyQt.QtGui import (
 )
 from qgis.PyQt.QtWidgets import QApplication, QFileDialog, QMenu, QSizePolicy, QWidget
 
-from .compat import flag_int
+from ..core.compat import flag_int
 
-HIT_TOLERANCE_PX = 5.0
 # Tooltip background opacity (about 70 %).
 TOOLTIP_ALPHA = 179
 # Exported raster images are rendered at this multiple of screen resolution.
@@ -146,11 +145,6 @@ def minor_ticks(lo, hi, major, minor):
 def tick_decimals(step):
     text = "{:.10f}".format(step).rstrip("0")
     return len(text.split(".")[1]) if "." in text else 0
-
-
-def contrast_text(color):
-    lum = 0.299 * color.redF() + 0.587 * color.greenF() + 0.114 * color.blueF()
-    return QColor("#000000") if lum > 0.6 else QColor("#ffffff")
 
 
 # ---------------------------------------------------------------------------
@@ -290,35 +284,6 @@ def series_polylines(profile, xmin, xmax, ymin, ymax, rect, style="smooth"):
     return [pts[4 * s:4 * e] for s, e in zip(bounds[:-1], bounds[1:])]
 
 
-def _hit_distance(polylines, cx, cy, tol):
-    """Smallest distance from (cx, cy) to any polyline segment near cx."""
-    best = math.inf
-    for pts in polylines:
-        if pts.shape[0] == 0:
-            continue
-        if pts[-1, 0] < cx - tol or pts[0, 0] > cx + tol:
-            continue
-        xs = pts[:, 0]
-        i0 = max(0, int(np.searchsorted(xs, cx - tol, side="left")) - 1)
-        i1 = min(pts.shape[0], int(np.searchsorted(xs, cx + tol, side="right")) + 1)
-        seg = pts[i0:i1]
-        if seg.shape[0] == 1:
-            d = math.hypot(seg[0, 0] - cx, seg[0, 1] - cy)
-            best = min(best, d)
-            continue
-        a = seg[:-1]
-        b = seg[1:]
-        ab = b - a
-        ap = np.array([cx, cy]) - a
-        denom = (ab ** 2).sum(axis=1)
-        t = np.where(denom > 0, (ap * ab).sum(axis=1) / np.where(denom > 0, denom, 1), 0)
-        t = np.clip(t, 0, 1)
-        proj = a + ab * t[:, None]
-        d = np.hypot(proj[:, 0] - cx, proj[:, 1] - cy).min()
-        best = min(best, float(d))
-    return best
-
-
 # ---------------------------------------------------------------------------
 # widget
 # ---------------------------------------------------------------------------
@@ -365,7 +330,6 @@ class ProfilePlotWidget(QWidget):
         self._cache = None
         self._dirty = True
         self._plot_rect = QRectF()
-        self._polylines = {}
         self._cursor = None
         self._drag_origin = None
         self._drag_view = None
@@ -597,14 +561,12 @@ class ProfilePlotWidget(QWidget):
         # curves
         p.setClipRect(rect.adjusted(-1, -1, 1, 1))
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        self._polylines = {}
         any_data = False
         for s in self.series:
             prof = s.profile
             if prof is None:
                 continue
             lines = series_polylines(prof, xmin, xmax, ymin, ymax, rect, self.line_style)
-            self._polylines[s.uid] = lines
             pen = QPen(s.color)
             pen.setWidthF(1.6)
             if self.line_style == "steps":
@@ -680,12 +642,7 @@ class ProfilePlotWidget(QWidget):
                 self._tooltip(p, cur, self.crosshair_text(ch, ye), bg, QColor("#000000"),
                               QColor(0, 0, 0, 70))
             else:
-                hit = self._hit_test(cur.x(), cur.y())
-                if hit is not None:
-                    s, value = hit
-                    bg = QColor(s.color)
-                    bg.setAlpha(TOOLTIP_ALPHA)
-                    self._tooltip(p, cur, self.hover_text(ch, value), bg, contrast_text(s.color))
+                self._paint_hover(p, cur.x(), ch, rect, colors, fm)
         if visible and self.show_legend:
             self._paint_readout(p, visible, ch, fm, colors)
 
@@ -693,10 +650,75 @@ class ProfilePlotWidget(QWidget):
         """Crosshair tooltip, e.g. ``x[50.00], y[78.50]``."""
         return "x[{}], y[{}]".format(self._format(chainage, True), self._format(elevation))
 
-    def hover_text(self, chainage, value):
-        """Hover tooltip, same format as the crosshair, e.g.
-        ``x[50.00], y[78.50]`` (y is the value of the hovered line)."""
-        return "x[{}], y[{}]".format(self._format(chainage, True), self._format(value))
+    def hover_rows(self, chainage):
+        """Hover box rows: (colour, value text) for every plotted raster with
+        a value at ``chainage``, highest value first (the rows then stack in
+        the same order as the curves).  Just the values, no names."""
+        rows = []
+        for series in self.series:
+            if series.profile is None:
+                continue
+            v = series.profile.value_at(chainage)
+            if math.isfinite(v):
+                rows.append((v, series.color))
+        rows.sort(key=lambda r: -r[0])
+        return [(QColor(color), self._format(v)) for v, color in rows]
+
+    def hover_chainage_text(self, chainage):
+        """Chainage label shown on the X axis under the hover guide."""
+        return self._format(chainage, True)
+
+    def _paint_hover(self, p, x, ch, rect, colors, fm):
+        """Hover: a dashed vertical guide at the pointer, a box with the
+        value of each plot (coloured dot + value) at the top of the guide,
+        and the chainage in a dark label on the X axis."""
+        p.save()
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        guide = QPen(colors["axis"])
+        guide.setStyle(Qt.PenStyle.DashLine)
+        p.setPen(guide)
+        p.drawLine(QPointF(x, rect.top()), QPointF(x, rect.bottom()))
+
+        rows = self.hover_rows(ch)
+        if rows:
+            dot = 9.0
+            pad = 7.0
+            gap = 6.0
+            line_h = fm.height() + 3
+            text_w = max(fm.horizontalAdvance(t) for _, t in rows)
+            w = pad + dot + gap + text_w + pad
+            h = pad + line_h * len(rows) + pad - 3
+            bx = min(max(x - w / 2, rect.left() + 2), rect.right() - w - 2)
+            box = QRectF(bx, rect.top() + 4, w, h)
+            p.setPen(QPen(QColor(0, 0, 0, 70), 1.0))
+            p.setBrush(QColor(255, 255, 255, TOOLTIP_ALPHA))
+            p.drawRoundedRect(box, 3, 3)
+            y = box.top() + pad - 1
+            for color, text in rows:
+                mid = y + line_h / 2
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(color)
+                p.drawEllipse(QPointF(bx + pad + dot / 2, mid), dot / 2, dot / 2)
+                p.setPen(QPen(QColor("#000000")))
+                p.drawText(QRectF(bx + pad + dot + gap, y, text_w + 2, line_h),
+                           flag_int(Qt.AlignmentFlag.AlignLeft, Qt.AlignmentFlag.AlignVCenter),
+                           text)
+                y += line_h
+
+        label = self.hover_chainage_text(ch)
+        lw = fm.horizontalAdvance(label) + 12
+        lh = fm.height() + 6
+        lx = min(max(x - lw / 2, 1.0), self.width() - lw - 1)
+        ly = rect.bottom() + 5
+        dark = QColor(33, 33, 33, 240)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(dark)
+        p.drawPolygon(QPolygonF([QPointF(x - 5, ly + 0.5), QPointF(x + 5, ly + 0.5),
+                                 QPointF(x, ly - 4.5)]))
+        p.drawRoundedRect(QRectF(lx, ly, lw, lh), 2, 2)
+        p.setPen(QPen(QColor("#ffffff")))
+        p.drawText(QRectF(lx, ly, lw, lh), flag_int(Qt.AlignmentFlag.AlignCenter), label)
+        p.restore()
 
     def _tooltip(self, p, cur, text, bg, fg, border=None):
         fm = QFontMetricsF(self.font())
@@ -761,32 +783,6 @@ class ProfilePlotWidget(QWidget):
                 p.drawText(QRectF(box.right() - 8 - val_w, y, val_w, line_h),
                            flag_int(Qt.AlignmentFlag.AlignRight, Qt.AlignmentFlag.AlignVCenter), val)
             y += line_h
-
-    def _hit_test(self, cx, cy):
-        best = None
-        best_d = HIT_TOLERANCE_PX
-        for s in reversed(self.series):  # topmost first
-            lines = self._polylines.get(s.uid)
-            if not lines:
-                continue
-            d = _hit_distance(lines, cx, cy, HIT_TOLERANCE_PX)
-            if d <= best_d:
-                best_d = d
-                best = s
-        if best is None:
-            return None
-        ch, _ = self._to_data(cx, cy)
-        value = best.profile.value_at(ch)
-        if not math.isfinite(value):
-            # Pointer is on a riser: report the nearest side.
-            for dx in (-1.0, 1.0):
-                c2, _ = self._to_data(cx + dx, cy)
-                value = best.profile.value_at(c2)
-                if math.isfinite(value):
-                    break
-        if not math.isfinite(value):
-            return None
-        return best, value
 
     # -- interaction ----------------------------------------------------------------------
 

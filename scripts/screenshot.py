@@ -7,9 +7,9 @@ import os
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(HERE, "..", "tests"))
+sys.path.insert(0, os.path.join(HERE, "..", "tests", "qgis"))
 
-import qgis_harness as H  # noqa: E402
+import harness as H  # noqa: E402
 
 
 def style(layer, colors, opacity=1.0):
@@ -71,7 +71,7 @@ def main():
         app.processEvents()
 
     dock.act_cross.setChecked(True)
-    from profile_plot import settings
+    from profile_plot.core import settings
     # Defaults, so the screenshots show what a new user sees
     for key, value in (("showLegend", False), ("showAB", False), ("showUnits", False),
                        ("unit", "m"),
@@ -98,7 +98,7 @@ def main():
     dock._apply_settings()
 
     # Settings dialog
-    from profile_plot.settings import SettingsDialog
+    from profile_plot.ui.settings_dialog import SettingsDialog
     dlg = SettingsDialog(dock)
     dlg.show()
     app.processEvents()

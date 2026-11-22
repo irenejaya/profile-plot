@@ -30,8 +30,8 @@ from qgis.PyQt.QtWidgets import (
     QWidget,
 )
 
+from ..core.compat import set_text_alignment
 from . import icons
-from .compat import set_text_alignment
 
 
 def flag_align_left_vcenter():

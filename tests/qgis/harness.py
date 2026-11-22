@@ -6,10 +6,27 @@ and a fake ``iface`` with the methods Profile Plot uses.
 
 import os
 import sys
+import tempfile
 import time
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(os.path.dirname(HERE))
+
+
+def plugin_package():
+    """Import the repository as the 'profile_plot' package, the way QGIS
+    loads it from the plugins folder."""
+    if "profile_plot" in sys.modules:
+        return sys.modules["profile_plot"]
+    parent = tempfile.mkdtemp(prefix="pp_plugins_")
+    os.symlink(ROOT, os.path.join(parent, "profile_plot"))
+    sys.path.insert(0, parent)
+    import profile_plot  # noqa: F401
+    return profile_plot
+
+
+plugin_package()
 
 import numpy as np  # noqa: E402
 from osgeo import gdal, osr  # noqa: E402
@@ -78,6 +95,9 @@ class FakeIface(QObject):
 
     def addToolBarIcon(self, action):
         return 0
+
+    def addToolBar(self, name):
+        return self.mw.addToolBar(name)
 
     def removeToolBarIcon(self, action):
         pass

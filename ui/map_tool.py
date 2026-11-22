@@ -5,7 +5,7 @@ from qgis.gui import QgsMapCanvasItem, QgsMapTool, QgsSnapIndicator
 from qgis.PyQt.QtCore import QRectF, Qt, pyqtSignal
 from qgis.PyQt.QtGui import QBrush, QColor, QFont, QFontMetricsF, QPainter, QPen
 
-from .compat import flag_int
+from ..core.compat import flag_int
 
 LINE_COLOR = QColor("#e815e8")
 MARKER_COLOR = QColor("#ffd60a")
