@@ -1,10 +1,12 @@
 """Raster list panel: rows with visibility, colour, name and cell size."""
 
 from qgis.core import Qgis, QgsMimeDataUtils, QgsProject, QgsRasterLayer, QgsUnitTypes
-from qgis.gui import QgsColorButton, QgsColorDialog
-from qgis.PyQt.QtCore import QSize, Qt, pyqtSignal
+from qgis.gui import QgsColorDialog
+from qgis.PyQt.QtCore import QRect, QSize, Qt, pyqtSignal
+from qgis.PyQt.QtGui import QColor, QPainter, QPalette
 from qgis.PyQt.QtWidgets import (
     QAbstractItemView,
+    QBoxLayout,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -15,6 +17,10 @@ from qgis.PyQt.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMenu,
+    QSizePolicy,
+    QStyle,
+    QStyleOptionComboBox,
+    QStylePainter,
     QToolButton,
     QTreeWidget,
     QTreeWidgetItem,
@@ -81,6 +87,69 @@ def format_cell_size(entry, show_units):
     return text
 
 
+class ColorSwatchButton(QToolButton):
+    """Solid colour box; click it to pick a colour with the QGIS colour
+    dialog.  Drawn with the same swatch as the slope selector."""
+
+    colorChanged = pyqtSignal(QColor)
+
+    def __init__(self, color, parent=None):
+        super().__init__(parent)
+        self._color = QColor(color)
+        self.dialog_title = "Curve colour"
+        self.setAutoRaise(True)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFocusPolicy(Qt.FocusPolicy.TabFocus)
+        self.setFixedSize(icons.SWATCH_SIZE + 8, icons.SWATCH_SIZE + 6)
+        self.clicked.connect(self.pick_color)
+
+    def color(self):
+        return QColor(self._color)
+
+    def setColor(self, color):  # noqa: N802 (Qt-style API)
+        color = QColor(color)
+        if not color.isValid() or color == self._color:
+            return
+        self._color = color
+        self.update()
+        self.colorChanged.emit(QColor(color))
+
+    def pick_color(self):
+        c = QgsColorDialog.getColor(self._color, self, self.dialog_title, False)
+        if c.isValid():
+            self.setColor(c)
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        s = icons.SWATCH_SIZE
+        rect = QRect((self.width() - s) // 2, (self.height() - s) // 2, s, s)
+        if self.underMouse() or self.hasFocus():
+            hl = QColor(self.palette().color(QPalette.ColorRole.Highlight))
+            hl.setAlpha(90)
+            p.fillRect(rect.adjusted(-3, -3, 3, 3), hl)
+        icons.paint_swatch(p, rect, self._color)
+        p.end()
+
+
+class ElidedComboBox(QComboBox):
+    """Combo box that shortens a long current text with "…" instead of
+    clipping it mid-letter."""
+
+    def paintEvent(self, event):
+        painter = QStylePainter(self)
+        opt = QStyleOptionComboBox()
+        self.initStyleOption(opt)
+        painter.drawComplexControl(QStyle.ComplexControl.CC_ComboBox, opt)
+        field = self.style().subControlRect(QStyle.ComplexControl.CC_ComboBox, opt,
+                                            QStyle.SubControl.SC_ComboBoxEditField, self)
+        avail = field.width() - 4
+        if not opt.currentIcon.isNull():
+            avail -= opt.iconSize.width() + 4
+        opt.currentText = self.fontMetrics().elidedText(
+            opt.currentText, Qt.TextElideMode.ElideRight, max(avail, 0))
+        painter.drawControl(QStyle.ControlElement.CE_ComboBoxLabel, opt)
+
+
 class RasterTree(QTreeWidget):
     """List widget accepting layer drops and internal reordering."""
 
@@ -106,7 +175,7 @@ class RasterTree(QTreeWidget):
         hdr.setMinimumSectionSize(4)
         hdr.setSectionResizeMode(COL_VISIBLE, QHeaderView.ResizeMode.ResizeToContents)
         hdr.setSectionResizeMode(COL_COLOR, QHeaderView.ResizeMode.Fixed)
-        hdr.resizeSection(COL_COLOR, 32)
+        hdr.resizeSection(COL_COLOR, icons.SWATCH_SIZE + 12)
         hdr.setSectionResizeMode(COL_NAME, QHeaderView.ResizeMode.Stretch)
         hdr.setSectionResizeMode(COL_CELL, QHeaderView.ResizeMode.ResizeToContents)
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -181,24 +250,24 @@ class RasterPanel(QWidget):
         lay.addWidget(self.tree, 1)
 
         # Slope selector (re-parented to the footer in the compact layout).
+        # In the panel the label sits above a full-width selector, so the
+        # selector lines up with the raster box; in the compact layout the
+        # same widget sits inline in the footer.
         self.slope_box = QWidget(self)
-        sl = QHBoxLayout(self.slope_box)
-        sl.setContentsMargins(0, 0, 0, 0)
-        sl.setSpacing(6)
+        self._slope_layout = QBoxLayout(QBoxLayout.Direction.TopToBottom, self.slope_box)
+        self._slope_layout.setContentsMargins(0, 0, 0, 0)
         self.slope_label = QLabel("Slope layer")
-        sl.addWidget(self.slope_label)
-        self.slope_combo = QComboBox()
-        self.slope_combo.setToolTip("Raster used for ΔZ and average slope (start to end of the line).\n"
-                                    "Leave as (none) to hide the grade.")
-        self.slope_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
-        self.slope_combo.setMinimumContentsLength(10)
-        self.slope_combo.setMaximumWidth(260)
+        self._slope_layout.addWidget(self.slope_label)
+        self.slope_combo = ElidedComboBox()
+        self.slope_combo.setMinimumContentsLength(4)
+        self.slope_combo.setIconSize(QSize(icons.SWATCH_SIZE, icons.SWATCH_SIZE))
         self.slope_combo.currentIndexChanged.connect(self._on_slope_changed)
-        sl.addWidget(self.slope_combo, 1)
+        self._slope_layout.addWidget(self.slope_combo, 1)
         self.slope_slot = QVBoxLayout()
         self.slope_slot.setContentsMargins(0, 0, 0, 0)
         self.slope_slot.addWidget(self.slope_box)
         lay.addLayout(self.slope_slot)
+        self._set_slope_layout(compact=False)
 
         session.rastersChanged.connect(self.refresh)
         session.colorChanged.connect(self._on_color_changed)
@@ -250,15 +319,22 @@ class RasterPanel(QWidget):
         if idx < 0:
             self.session.set_slope(None)
         combo.blockSignals(False)
+        # The drop-down list shows full names even when the box is narrow.
+        fm = combo.fontMetrics()
+        widest = max([fm.horizontalAdvance(combo.itemText(i)) for i in range(combo.count())] + [0])
+        combo.view().setMinimumWidth(widest + icons.SWATCH_SIZE + 36)
+        self._update_slope_tooltip()
+
+    def _update_slope_tooltip(self):
+        name = self.slope_combo.currentText()
+        self.slope_combo.setToolTip(
+            "Slope layer: {}\nRaster used for ΔZ and average slope (start to end of the "
+            "line).\nLeave as (none) to hide the grade.".format(name))
 
     def _color_button(self, e):
         """QGIS colour box: click it to pick the curve colour."""
-        btn = QgsColorButton()
-        btn.setShowMenu(False)
-        btn.setAllowOpacity(False)
-        btn.setColorDialogTitle("Curve colour")
-        btn.setColor(e.color)
-        btn.setFixedSize(26, 16)
+        btn = ColorSwatchButton(e.color)
+        btn.dialog_title = "Curve colour – {}".format(e.name)
         btn.setToolTip("Click to change the colour of this curve")
         btn.setAccessibleName("Colour of {}".format(e.name))
         btn.setProperty("uid", e.uid)
@@ -289,6 +365,7 @@ class RasterPanel(QWidget):
             combo.blockSignals(True)
             combo.setCurrentIndex(idx)
             combo.blockSignals(False)
+            self._update_slope_tooltip()
 
     def set_show_units(self, show):
         self.show_units = show
@@ -306,6 +383,7 @@ class RasterPanel(QWidget):
 
     def _on_slope_changed(self, index):
         self.session.set_slope(self.slope_combo.itemData(index))
+        self._update_slope_tooltip()
 
     def _choose_color(self, uid):
         e = self.session.entry(uid)
@@ -350,11 +428,30 @@ class RasterPanel(QWidget):
 
     # -- compact layout ------------------------------------------------------------
 
+    def _set_slope_layout(self, compact):
+        combo = self.slope_combo
+        if compact:
+            self._slope_layout.setDirection(QBoxLayout.Direction.LeftToRight)
+            self._slope_layout.setSpacing(6)
+            combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
+            combo.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+            combo.setMaximumWidth(320)
+        else:
+            self._slope_layout.setDirection(QBoxLayout.Direction.TopToBottom)
+            self._slope_layout.setSpacing(2)
+            combo.setSizeAdjustPolicy(
+                QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+            combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+            combo.setMaximumWidth(16777215)
+        combo.updateGeometry()
+
     def take_slope_box(self):
         self.slope_slot.removeWidget(self.slope_box)
+        self._set_slope_layout(compact=True)
         return self.slope_box
 
     def restore_slope_box(self):
+        self._set_slope_layout(compact=False)
         self.slope_box.setParent(self)
         self.slope_slot.addWidget(self.slope_box)
         self.slope_box.show()

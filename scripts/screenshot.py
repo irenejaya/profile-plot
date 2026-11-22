@@ -31,7 +31,7 @@ def main():
     out = sys.argv[1]
     os.makedirs(out, exist_ok=True)
     app = H.app()
-    from qgis.PyQt.QtCore import QPointF, Qt
+    from qgis.PyQt.QtCore import QPointF
     paths = H.make_creek_rasters(os.path.join(out, "data"))
     layers = H.load_layers(paths, ["LiDAR DEM", "1% AEP WSE", "5% AEP WSE"])
     style(layers[0], [(78.4, "#2f6b2f"), (79.5, "#7fae5a"), (81, "#d8c98f"), (82.3, "#f3efe0")])
@@ -49,12 +49,12 @@ def main():
     s.add_layers(layers)
     plugin.run()
     s.set_slope(s.rasters[0].uid)
-    tool = dock.map_tool
+    # Exact vertices (clicks would be rounded to whole screen pixels and
+    # could land just outside the DEM edge).
+    from qgis.core import QgsPointXY
     y = H.ORIGIN_Y - 20
-    H.mouse(tool, iface.canvas, "press", H.ORIGIN_X, y)
-    H.mouse(tool, iface.canvas, "move", H.ORIGIN_X + 100, y)
-    H.mouse(tool, iface.canvas, "press", H.ORIGIN_X + 100, y)
-    H.mouse(tool, iface.canvas, "press", H.ORIGIN_X + 100, y, Qt.MouseButton.RightButton)
+    s.set_line([QgsPointXY(H.ORIGIN_X, y), QgsPointXY(H.ORIGIN_X + 99.9999, y)],
+               iface.canvas.mapSettings().destinationCrs())
     H.wait_idle(s)
     iface.canvas.refresh()
     iface.canvas.waitWhileRendering()

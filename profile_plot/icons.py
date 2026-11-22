@@ -7,7 +7,7 @@ palette so they follow light and dark themes.
 import os
 
 from qgis.core import QgsApplication
-from qgis.PyQt.QtCore import QByteArray, QRectF, Qt
+from qgis.PyQt.QtCore import QByteArray, QRect, QRectF, Qt
 from qgis.PyQt.QtGui import QColor, QIcon, QPainter, QPalette, QPixmap
 from qgis.PyQt.QtWidgets import QApplication
 
@@ -106,12 +106,25 @@ def clear_cache():
     _cache.clear()
 
 
-def color_swatch(color, size=14):
-    pm = QPixmap(size, size)
-    pm.fill(Qt.GlobalColor.transparent)
-    p = QPainter(pm)
-    p.setPen(QColor(0, 0, 0, 90))
-    p.setBrush(QColor(color))
-    p.drawRect(0, 0, size - 1, size - 1)
-    p.end()
-    return QIcon(pm)
+SWATCH_SIZE = 14
+
+
+def paint_swatch(painter, rect, color):
+    """The one colour-swatch look used everywhere (raster rows, slope
+    selector): a solid square with a thin dark outline."""
+    painter.setPen(QColor(0, 0, 0, 110))
+    painter.setBrush(QColor(color))
+    painter.drawRect(rect.adjusted(0, 0, -1, -1))
+
+
+def color_swatch(color, size=SWATCH_SIZE):
+    icon = QIcon()
+    for scale in (1, 2):
+        pm = QPixmap(size * scale, size * scale)
+        pm.setDevicePixelRatio(scale)
+        pm.fill(Qt.GlobalColor.transparent)
+        p = QPainter(pm)
+        paint_swatch(p, QRect(0, 0, size, size), color)
+        p.end()
+        icon.addPixmap(pm)
+    return icon

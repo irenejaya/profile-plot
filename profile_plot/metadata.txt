@@ -5,7 +5,7 @@ qgisMaximumVersion=4.99
 supportsQt6=True
 description=Fast raster profiles: draw a line and instantly plot every raster (DEM, water surface, ...) along it at native resolution.
 about=Profile Plot draws elevation profiles from any number of rasters along a line you draw on the map or a selected line feature. One shortcut (assign it yourself in Settings > Keyboard Shortcuts) opens the dock and starts drawing. The plot updates live while you draw, including the segment following the mouse. Native-cell sampling walks every pixel the line crosses (nothing is skipped), with optional 1 cm stations and bilinear interpolation. Hover and crosshair inspection, live length / ΔZ / average slope, a table with CSV export and export of the alignment to a temporary layer are included. Rendering uses QPainter with cached curves and a background reader with tile caching, so it works offline with no extra dependencies.
-version=1.1.0
+version=1.1.1
 author=irenejaya
 email=
 tracker=https://github.com/irenejaya/profile-plot/issues
@@ -16,5 +16,6 @@ icon=icons/profile_plot.svg
 tags=profile,elevation,dem,raster,cross section,chainage,flood,water surface,slope,terrain
 experimental=False
 deprecated=False
-changelog=1.1.0 - Icon-only + button, QGIS colour box per raster with presets (brown, 5 water colours, then red), legend toggle (hidden by default), simpler translucent tooltips, temporary-layer icon, plot image export (PNG, JPEG, SVG, clipboard).
+changelog=1.1.1 - Slope layer selector matches the raster box: same solid colour swatch, full width under the list, long names shortened with an ellipsis (full name in tooltip and drop-down), inline in the compact footer.
+    1.1.0 - Icon-only + button, QGIS colour box per raster with presets (brown, 5 water colours, then red), legend toggle (hidden by default), simpler translucent tooltips, temporary-layer icon, plot image export (PNG, JPEG, SVG, clipboard).
     1.0.0 - First release.

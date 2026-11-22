@@ -87,6 +87,8 @@ footer:
 * marked *endpoint grade across gap* (with coverage) if the line crosses NoData;
 * marked *(preview)* until full-resolution values are in.
 
+The selector sits under the raster box, uses the same colour swatches, and shows the full
+name; very long names are shortened with "…" and shown in full in the tooltip and the drop-down.
 When the raster list is collapsed, the selector moves next to the grade.
 
 **Inspecting:**

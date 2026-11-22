@@ -514,3 +514,37 @@ def test_image_export(env, tmp_path):
     assert (img.width(), img.height()) == (1200, 600)   # 2x resolution
     with open(str(tmp_path / "plot.svg")) as fh:
         assert "<svg" in fh.read(500)
+
+
+def test_slope_selector_matches_raster_box(env):
+    """Same swatch as the raster rows, full width under the raster box, and
+    the full name fits in the compact footer."""
+    from profile_plot import icons
+    from profile_plot.raster_list import ColorSwatchButton
+    dock = env["plugin"].dock
+    panel = dock.raster_panel
+    s = dock.session
+    e = s.rasters[0]
+    s.set_slope(e.uid)
+    dock.resize(1000, 340)
+    dock.show()
+    env["app"].processEvents()
+    btn = panel.color_button(e.uid)
+    assert isinstance(btn, ColorSwatchButton)
+    combo = panel.slope_combo
+    idx = combo.findData(e.uid)
+    a = combo.itemIcon(idx).pixmap(icons.SWATCH_SIZE, icons.SWATCH_SIZE).toImage()
+    b = icons.color_swatch(e.color).pixmap(icons.SWATCH_SIZE, icons.SWATCH_SIZE).toImage()
+    assert a == b
+    # Panel: selector as wide as the raster box, left edges aligned
+    tree_geo = panel.tree.geometry()
+    combo_left = combo.mapTo(panel, combo.rect().topLeft()).x()
+    assert abs(combo_left - tree_geo.left()) <= 2
+    assert abs(combo.width() - tree_geo.width()) <= 2
+    # Compact: inline in the footer, wide enough for the full name
+    dock.act_rasters.setChecked(False)
+    env["app"].processEvents()
+    fm = combo.fontMetrics()
+    assert combo.width() >= fm.horizontalAdvance(combo.currentText()) + icons.SWATCH_SIZE
+    dock.act_rasters.setChecked(True)
+    env["app"].processEvents()
