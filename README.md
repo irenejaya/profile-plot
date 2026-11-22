@@ -99,7 +99,8 @@ When the raster list is collapsed, the selector moves next to the grade.
   70 % opacity when you point at a curve.
 * With **Show legend** ticked in Settings, a corner box lists every raster with its value at
   the pointer. The chainage isn't repeated there because the tooltip already shows it.
-* A yellow dot marks the same station on the map.
+* In both modes a yellow dot marks the same station on the map line, including a line you are
+  still drawing. It disappears when the pointer leaves the plot.
 
 **Plot navigation:**
 

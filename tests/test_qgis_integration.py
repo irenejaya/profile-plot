@@ -617,3 +617,82 @@ def test_slope_selector_matches_raster_box(env):
     assert combo.width() >= fm.horizontalAdvance(combo.currentText()) + icons.SWATCH_SIZE
     dock.act_rasters.setChecked(True)
     env["app"].processEvents()
+
+
+def _plot_mouse_move(plot, x, y):
+    from qgis.PyQt.QtCore import QEvent
+    from qgis.PyQt.QtGui import QMouseEvent
+    from qgis.PyQt.QtWidgets import QApplication
+    local = QPointF(x, y)
+    ev = QMouseEvent(QEvent.Type.MouseMove, local, QPointF(plot.mapToGlobal(local.toPoint())),
+                     Qt.MouseButton.NoButton, Qt.MouseButton.NoButton,
+                     Qt.KeyboardModifier.NoModifier)
+    QApplication.sendEvent(plot, ev)
+
+
+def _plot_leave(plot):
+    from qgis.PyQt.QtCore import QEvent
+    from qgis.PyQt.QtWidgets import QApplication
+    QApplication.sendEvent(plot, QEvent(QEvent.Type.Leave))
+
+
+@pytest.mark.parametrize("mode", ["hover", "crosshair"])
+def test_map_marker_follows_plot_pointer(env, mode):
+    """Real mouse moves over the plot put the yellow marker on the map line
+    at the same chainage, in both inspection modes; leaving clears it."""
+    dock = env["plugin"].dock
+    s = dock.session
+    draw(env, [(X0, Y), (X0 + 100, Y)])
+    (dock.act_hover if mode == "hover" else dock.act_cross).setChecked(True)
+    dock.resize(1000, 340)
+    dock.show()
+    plot = dock.plot
+    plot.grab()
+    env["app"].processEvents()
+    a, b = s.line_points[0], s.line_points[-1]
+    length = s.total_length()
+    for ch in (10.0, 50.0, 87.5):
+        dem = s.profiles[s.rasters[0].uid]
+        px, py = plot._to_px(ch, dem.value_at(ch))
+        _plot_mouse_move(plot, px, py)
+        env["app"].processEvents()
+        m = dock.canvas_item.marker
+        assert m is not None
+        t = ch / length
+        assert m.x() == pytest.approx(a.x() + t * (b.x() - a.x()), abs=1e-6)
+        assert m.y() == pytest.approx(a.y() + t * (b.y() - a.y()), abs=1e-6)
+    _plot_leave(plot)
+    env["app"].processEvents()
+    assert dock.canvas_item.marker is None
+
+
+def test_map_marker_on_line_still_being_drawn(env):
+    """While a line is being drawn (moving tail), hovering the plot marks
+    the live line too, including the tail segment."""
+    dock = env["plugin"].dock
+    s = dock.session
+    tool = dock.map_tool
+    c = env["iface"].canvas
+    H.mouse(tool, c, "press", X0, Y)
+    H.mouse(tool, c, "press", X0 + 40, Y)
+    H.mouse(tool, c, "move", X0 + 40, Y - 30)     # tail goes south
+    H.wait_idle(s)
+    assert tool.drawing and s.tail_ch is not None
+    plot = dock.plot
+    plot.grab()
+    total = s.total_length()
+    fixed = s.fixed_length()
+    ch = fixed + 0.5 * (total - fixed)              # middle of the tail
+    px, _ = plot._to_px(ch, 0)
+    _plot_mouse_move(plot, px, plot._plot_rect.center().y())
+    env["app"].processEvents()
+    m = dock.canvas_item.marker
+    assert m is not None
+    start = s.line_points[-1]
+    tail = s.tail_point
+    t = (ch - fixed) / (total - fixed)
+    assert m.x() == pytest.approx(start.x() + t * (tail.x() - start.x()), abs=1e-6)
+    assert m.y() == pytest.approx(start.y() + t * (tail.y() - start.y()), abs=1e-6)
+    _plot_leave(plot)
+    s.clear_line()
+    tool.drawing = False

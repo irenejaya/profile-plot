@@ -695,8 +695,14 @@ class ProfilePlotWidget(QWidget):
     # -- interaction ----------------------------------------------------------------------
 
     def _event_pos(self, event):
+        """Pointer position with sub-pixel precision (Qt6 position(),
+        Qt5 localPos() for mouse events)."""
         if hasattr(event, "position"):
             return QPointF(event.position())
+        if hasattr(event, "localPos"):
+            return QPointF(event.localPos())
+        if hasattr(event, "posF"):  # Qt5 wheel events
+            return QPointF(event.posF())
         return QPointF(event.pos())
 
     def mouseMoveEvent(self, event):
