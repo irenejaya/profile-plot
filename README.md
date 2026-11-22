@@ -181,7 +181,7 @@ grade.
 | Mode | Tooltip | Shown |
 |---|---|---|
 | **Crosshair** | `x[50.00], y[78.50]` on translucent white: chainage and elevation at the cursor, also between curves | whenever the pointer is in the plot |
-| **Hover** | `[50.00], [78.50]` in the line's colour: chainage and that line's value | only while pointing at a curve |
+| **Hover** | `x[50.00], y[78.50]` in the line's colour: chainage and that line's value | only while pointing at a curve |
 
 * **Map marker:** in both modes a yellow dot marks the same station on the map line, even on a
   line you are still drawing. It disappears when the pointer leaves the plot.

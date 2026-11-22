@@ -564,10 +564,10 @@ def test_tooltip_formats(env):
     plot = env["plugin"].dock.plot
     plot.set_units(False, "m")
     assert plot.crosshair_text(50.0, -100.0) == "x[50.00], y[-100.00]"
-    assert plot.hover_text(50.0, 70.0) == "[50.00], [70.00]"
+    assert plot.hover_text(50.0, 100.0) == "x[50.00], y[100.00]"
     plot.set_units(True, "m AHD")
     assert plot.crosshair_text(50.0, 78.5) == "x[50.00 m], y[78.50 m AHD]"
-    assert plot.hover_text(50.0, 78.5) == "[50.00 m], [78.50 m AHD]"
+    assert plot.hover_text(50.0, 78.5) == "x[50.00 m], y[78.50 m AHD]"
     plot.set_units(False, "m")
 
 

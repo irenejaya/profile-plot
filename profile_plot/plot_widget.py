@@ -694,8 +694,9 @@ class ProfilePlotWidget(QWidget):
         return "x[{}], y[{}]".format(self._format(chainage, True), self._format(elevation))
 
     def hover_text(self, chainage, value):
-        """Hover tooltip, e.g. ``[50.00], [78.50]``."""
-        return "[{}], [{}]".format(self._format(chainage, True), self._format(value))
+        """Hover tooltip, same format as the crosshair, e.g.
+        ``x[50.00], y[78.50]`` (y is the value of the hovered line)."""
+        return "x[{}], y[{}]".format(self._format(chainage, True), self._format(value))
 
     def _tooltip(self, p, cur, text, bg, fg, border=None):
         fm = QFontMetricsF(self.font())
