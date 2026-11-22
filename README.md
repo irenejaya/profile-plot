@@ -54,7 +54,6 @@ The assigned key is shown in the icon's and the *Draw line* button's tooltips.
 * **Use selected line**: profiles the selected line feature. Curved lines are segmentised; for a
   multipart line the first part is used.
 * **Hover** / **Crosshair**
-* **Legend**: off by default.
 * **Zoom full**
 * **Export line to temporary layer** (temporary-layer icon): adds a scratch layer with the
   original vertices, direction and CRS.
@@ -63,8 +62,10 @@ The assigned key is shown in the icon's and the *Draw line* button's tooltips.
   resolution. The image shows what the plot shows, including the legend when it's on.
 * settings (gear)
 
-**Rasters:** each row has visibility, a colour box, name and cell size. Click the colour box to
-pick any colour with the QGIS colour picker. Right-click a row for *Band*, *Move up/down*,
+**Rasters:** a small table with a line under each row. Each row has visibility, a colour box,
+**Name** and **Res.** (resolution, i.e. cell size), with a divider between the name and the
+resolution. The panel widens to fit the longest name. Click the colour box to pick any colour
+with the QGIS colour picker. Right-click a row for *Band*, *Move up/down*,
 *Change colour* and *Remove*, or drag rows to reorder them. The list starts empty in each
 session.
 
@@ -79,8 +80,8 @@ New rasters get preset colours in the order you add them:
 **Slope layer:** optional. Pick one of your rasters to show **ΔZ** and **Average slope** in the
 footer:
 
-* signed net grade = 100 × (end − start) / horizontal length, over the whole line, e.g.
-  `−1.45% (1 in 69 falling)`;
+* signed net grade = (end − start) / horizontal length, over the whole line, shown in % by
+  default (e.g. `−1.45% (1 in 69 falling)`) or in m/m (`−0.0145 m/m`), chosen in Settings;
 * updates live while you draw;
 * hidden while the slope layer's curve is hidden;
 * reads *unavailable* if an endpoint has no data;
@@ -96,7 +97,8 @@ When the raster list is collapsed, the selector moves next to the grade.
   a translucent white tooltip.
 * *Hover* shows `[50.00], [78.50]` (chainage, value of that line) in the line's colour at about
   70 % opacity when you point at a curve.
-* With **Legend** on, the corner box also lists every raster's value at the pointer's chainage.
+* With **Show legend** ticked in Settings, a corner box lists every raster with its value at
+  the pointer. The chainage isn't repeated there because the tooltip already shows it.
 * A yellow dot marks the same station on the map.
 
 **Plot navigation:**
@@ -109,7 +111,7 @@ When the raster list is collapsed, the selector moves next to the grade.
 | drag | pan |
 | double-click, Home or Zoom full | fit the whole profile |
 
-Right-click the plot for *Zoom full*, *Show legend* and the image export options.
+Right-click the plot for *Zoom full* and the image export options.
 
 **Sampling** (footer):
 * **Native cells** (default): every cell the line crosses over a positive distance, drawn as
@@ -124,9 +126,14 @@ Right-click the plot for *Zoom full*, *Show legend* and the image export options
 * Station modes: one row per station.
 * *Export CSV* writes every row, with `NoData` for gaps. It's enabled once all values are final.
 
-**Settings (gear):** units are **hidden by default**. Turn on *Show units* to add `m` to
-chainage and your elevation unit (default `m`, e.g. `m AHD`) to the axes, tooltips, footer,
-table and CSV headings.
+**Settings (gear):**
+
+| Setting | Default | Effect |
+|---|---|---|
+| Show legend | off | Corner box with each raster and its value at the pointer |
+| Show units | off | Adds `m` to chainage and your elevation unit to the axes, tooltips, footer, table and CSV headings |
+| Elevation unit | `m` | Label used when units are shown, e.g. `m AHD` |
+| Slope unit | % | Average slope in % or m/m |
 
 ![Hover](docs/images/dock_hover.png)
 ![Legend on](docs/images/dock_legend.png)
@@ -197,7 +204,8 @@ The tests cover:
 * Agreement between the inspection readout and the CSV at each test station.
 * Rapid redraws never restoring an older line.
 * Shortcut tooltips, and export of vertices, direction and CRS.
-* Colour presets, the colour box, the legend default, tooltip formats and image export.
+* Colour presets, the colour box, the legend and slope-unit settings, tooltip formats, the raster
+  table and image export.
 
 ## License
 

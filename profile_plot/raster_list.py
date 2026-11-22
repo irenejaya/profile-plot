@@ -3,7 +3,7 @@
 from qgis.core import Qgis, QgsMimeDataUtils, QgsProject, QgsRasterLayer, QgsUnitTypes
 from qgis.gui import QgsColorDialog
 from qgis.PyQt.QtCore import QRect, QSize, Qt, pyqtSignal
-from qgis.PyQt.QtGui import QColor, QPainter, QPalette
+from qgis.PyQt.QtGui import QColor, QPainter, QPalette, QPen
 from qgis.PyQt.QtWidgets import (
     QAbstractItemView,
     QBoxLayout,
@@ -20,6 +20,7 @@ from qgis.PyQt.QtWidgets import (
     QSizePolicy,
     QStyle,
     QStyleOptionComboBox,
+    QStyledItemDelegate,
     QStylePainter,
     QToolButton,
     QTreeWidget,
@@ -30,6 +31,11 @@ from qgis.PyQt.QtWidgets import (
 
 from . import icons
 from .compat import set_text_alignment
+
+
+def flag_align_left_vcenter():
+    return Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+
 
 UID_ROLE = 0x0100 + 1  # Qt.UserRole + 1 (plain int works on Qt5 and Qt6)
 COL_VISIBLE, COL_COLOR, COL_NAME, COL_CELL = range(4)
@@ -100,7 +106,9 @@ class ColorSwatchButton(QToolButton):
         self.setAutoRaise(True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFocusPolicy(Qt.FocusPolicy.TabFocus)
-        self.setFixedSize(icons.SWATCH_SIZE + 8, icons.SWATCH_SIZE + 6)
+        # Fills its table cell; only the centred swatch is painted, so the
+        # row lines underneath stay visible.
+        self.setMinimumSize(icons.SWATCH_SIZE + 4, icons.SWATCH_SIZE + 4)
         self.clicked.connect(self.pick_color)
 
     def color(self):
@@ -150,6 +158,39 @@ class ElidedComboBox(QComboBox):
         painter.drawControl(QStyle.ControlElement.CE_ComboBoxLabel, opt)
 
 
+def grid_color(palette):
+    base = palette.color(QPalette.ColorRole.Base)
+    text = palette.color(QPalette.ColorRole.Text)
+    t = 0.16
+    return QColor(int(base.red() * (1 - t) + text.red() * t),
+                  int(base.green() * (1 - t) + text.green() * t),
+                  int(base.blue() * (1 - t) + text.blue() * t))
+
+
+class GridDelegate(QStyledItemDelegate):
+    """Table look for the raster rows: a line under every row and a column
+    divider between the name and the resolution."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.row_height = 0
+
+    def paint(self, painter, option, index):
+        super().paint(painter, option, index)
+        painter.save()
+        painter.setPen(QPen(grid_color(option.palette), 1))
+        r = option.rect
+        painter.drawLine(r.left(), r.bottom(), r.right(), r.bottom())
+        if index.column() in (COL_COLOR, COL_NAME):
+            painter.drawLine(r.right(), r.top(), r.right(), r.bottom())
+        painter.restore()
+
+    def sizeHint(self, option, index):
+        size = super().sizeHint(option, index)
+        size.setHeight(max(size.height(), self.row_height))
+        return size
+
+
 class RasterTree(QTreeWidget):
     """List widget accepting layer drops and internal reordering."""
 
@@ -159,7 +200,11 @@ class RasterTree(QTreeWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setColumnCount(4)
-        self.setHeaderHidden(True)
+        self.setHeaderLabels(["", "", "Name", "Res."])
+        self._delegate = GridDelegate(self)
+        self._delegate.row_height = max(self.fontMetrics().height() + 8, icons.SWATCH_SIZE + 10)
+        self.setItemDelegate(self._delegate)
+        self.setAllColumnsShowFocus(True)
         self.setRootIsDecorated(False)
         self.setIndentation(0)
         self.setUniformRowHeights(True)
@@ -178,6 +223,13 @@ class RasterTree(QTreeWidget):
         hdr.resizeSection(COL_COLOR, icons.SWATCH_SIZE + 12)
         hdr.setSectionResizeMode(COL_NAME, QHeaderView.ResizeMode.Stretch)
         hdr.setSectionResizeMode(COL_CELL, QHeaderView.ResizeMode.ResizeToContents)
+        hdr.setSectionsMovable(False)
+        hdr.setSectionsClickable(False)
+        hdr.setHighlightSections(False)
+        hdr.setDefaultAlignment(flag_align_left_vcenter())
+        set_text_alignment(self.headerItem(), COL_CELL, Qt.AlignmentFlag.AlignRight,
+                           Qt.AlignmentFlag.AlignVCenter)
+        self.headerItem().setToolTip(COL_CELL, "Resolution (cell size)")
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
 
     def dragEnterEvent(self, event):
@@ -290,14 +342,14 @@ class RasterPanel(QWidget):
                                  else Qt.CheckState.Unchecked)
                 it.setToolTip(COL_VISIBLE, "Show or hide this curve")
                 it.setText(COL_NAME, e.name)
-                tip = e.layer.source()
+                tip = e.name + "\n" + e.layer.source()
                 if e.error:
                     tip = e.error + "\n" + tip
                 it.setToolTip(COL_NAME, tip)
                 it.setText(COL_CELL, format_cell_size(e, self.show_units))
                 set_text_alignment(it, COL_CELL, Qt.AlignmentFlag.AlignRight,
                                    Qt.AlignmentFlag.AlignVCenter)
-                it.setToolTip(COL_CELL, "Cell size")
+                it.setToolTip(COL_CELL, "Resolution (cell size)")
                 self.tree.addTopLevelItem(it)
                 self.tree.setItemWidget(it, COL_COLOR, self._color_button(e))
                 if e.uid == sel:
@@ -444,6 +496,20 @@ class RasterPanel(QWidget):
             combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             combo.setMaximumWidth(16777215)
         combo.updateGeometry()
+
+    def needed_width(self):
+        """Panel width that shows every name and resolution in full."""
+        tree = self.tree
+        fm = tree.fontMetrics()
+        hdr = tree.header()
+        name_w = max([fm.horizontalAdvance(e.name) for e in self.session.rasters] +
+                     [fm.horizontalAdvance("Name")]) + 16
+        cell_w = max([fm.horizontalAdvance(format_cell_size(e, self.show_units))
+                      for e in self.session.rasters] + [fm.horizontalAdvance("Res.")]) + 18
+        cols = hdr.sectionSize(COL_VISIBLE) + hdr.sectionSize(COL_COLOR) + name_w + cell_w
+        frame = tree.frameWidth() * 2 + tree.verticalScrollBar().sizeHint().width()
+        margins = self.layout().contentsMargins()
+        return cols + frame + margins.left() + margins.right()
 
     def take_slope_box(self):
         self.slope_slot.removeWidget(self.slope_box)

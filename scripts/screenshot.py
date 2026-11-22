@@ -71,7 +71,9 @@ def main():
         app.processEvents()
 
     dock.act_cross.setChecked(True)
-    dock.act_legend.setChecked(False)   # default: legend hidden
+    from profile_plot import settings
+    settings.set("showLegend", False)   # default: legend hidden
+    dock._apply_settings()
     plot.grab()
     at(50.0, dem.value_at(50.0))
     iface.mw.grab().save(os.path.join(out, "window_crosshair.png"))
@@ -83,10 +85,20 @@ def main():
     dock.grab().save(os.path.join(out, "dock_hover.png"))
 
     # Legend switched on
-    dock.act_legend.setChecked(True)
+    settings.set("showLegend", True)
+    dock._apply_settings()
     at(50.0, dem.value_at(50.0))
     dock.grab().save(os.path.join(out, "dock_legend.png"))
-    dock.act_legend.setChecked(False)
+    settings.set("showLegend", False)
+    dock._apply_settings()
+
+    # Settings dialog
+    from profile_plot.settings import SettingsDialog
+    dlg = SettingsDialog(dock)
+    dlg.show()
+    app.processEvents()
+    dlg.grab().save(os.path.join(out, "settings.png"))
+    dlg.reject()
 
     # Image export menu
     dock.image_menu.popup(dock.image_button.mapToGlobal(dock.image_button.rect().bottomLeft()))

@@ -87,10 +87,11 @@ class ProfileDock(QgsDockWidget):
         self._display_xf_key = None
         self._mapper_rev = None
         self._compact = False
+        self.slope_unit = settings.slope_unit()
 
         self._build_ui()
         self._connect()
-        self._apply_units()
+        self._apply_settings()
         self._update_placeholder()
         self._update_footer()
         self._update_actions()
@@ -150,13 +151,6 @@ class ProfileDock(QgsDockWidget):
         bar.addWidget(_tool_button(self.act_cross, True))
         bar.addWidget(_separator())
 
-        self.act_legend = QAction(icons.icon("legend"), "Legend", self)
-        self.act_legend.setCheckable(True)
-        self.act_legend.setChecked(settings.get("showLegend", False, bool))
-        self.act_legend.setToolTip("Show legend (raster names and values at the pointer)")
-        b_legend = _tool_button(self.act_legend)
-        b_legend.setAccessibleName("Show legend")
-        bar.addWidget(b_legend)
         self.act_zoom = QAction(icons.icon("zoom_full"), "Zoom full", self)
         self.act_zoom.setToolTip("Zoom full (fit the whole profile)")
         b_zoom = _tool_button(self.act_zoom)
@@ -181,7 +175,7 @@ class ProfileDock(QgsDockWidget):
         bar.addWidget(self.image_button)
         bar.addStretch(1)
         self.act_settings = QAction(icons.icon("settings"), "Settings", self)
-        self.act_settings.setToolTip("Profile Plot settings (units)")
+        self.act_settings.setToolTip("Profile Plot settings (legend, units, slope unit)")
         b_set = _tool_button(self.act_settings)
         b_set.setAccessibleName("Profile Plot settings")
         bar.addWidget(b_set)
@@ -262,9 +256,6 @@ class ProfileDock(QgsDockWidget):
         self.plot.cursorChainage.connect(self._on_plot_cursor)
         self.plot.add_export_actions(self.image_menu)
         self.image_button.clicked.connect(lambda: self.plot.save_image("png"))
-        self.plot.set_show_legend(self.act_legend.isChecked())
-        self.act_legend.toggled.connect(self._on_legend_toggled)
-        self.plot.legendToggled.connect(self.act_legend.setChecked)
         s.colorChanged.connect(lambda *_: self._on_profiles())
         self.plot.set_mode("hover" if self.act_hover.isChecked() else "crosshair")
         self.tabs.currentChanged.connect(lambda _i: self._refresh_table())
@@ -533,6 +524,20 @@ class ProfileDock(QgsDockWidget):
     def _on_rasters_changed(self):
         self._update_placeholder()
         self._on_profiles()
+        QTimer.singleShot(0, self._fit_raster_panel)
+
+    def _fit_raster_panel(self):
+        """Widen the raster list so names and resolutions are not cut,
+        keeping at least 55 % of the dock for the plot."""
+        if self._compact or not self.raster_panel.isVisible():
+            return
+        sizes = self.splitter.sizes()
+        total = sum(sizes)
+        if total <= 0:
+            return
+        want = min(self.raster_panel.needed_width(), int(total * 0.45))
+        if want > sizes[0]:
+            self.splitter.setSizes([want, total - want])
 
     # ------------------------------------------------------------------
     # profile updates
@@ -591,7 +596,10 @@ class ProfileDock(QgsDockWidget):
                                    "Average slope  –")
             return
         self.lbl_dz.setText("ΔZ  {}{}".format(_num(info.dz), vu))
-        text = "Average slope  {}%".format(_num(info.grade))
+        if self.slope_unit == "m/m":
+            text = "Average slope  {} m/m".format(_num(info.grade / 100.0, 4))
+        else:
+            text = "Average slope  {}%".format(_num(info.grade))
         ratio = grade_ratio_text(info.grade)
         if ratio and ratio != "flat":
             text += "  ({})".format(ratio)
@@ -616,10 +624,6 @@ class ProfileDock(QgsDockWidget):
     # ------------------------------------------------------------------
     # actions
     # ------------------------------------------------------------------
-
-    def _on_legend_toggled(self, shown):
-        self.plot.set_show_legend(shown)
-        settings.set("showLegend", shown)
 
     def _on_inspect_mode(self, hover_checked):
         mode = "hover" if hover_checked else "crosshair"
@@ -661,12 +665,14 @@ class ProfileDock(QgsDockWidget):
         from .settings import SettingsDialog
         dlg = SettingsDialog(self)
         if dlg.exec():
-            self._apply_units()
+            self._apply_settings()
 
-    def _apply_units(self):
+    def _apply_settings(self):
         show = settings.show_units()
         unit = settings.unit_label()
+        self.slope_unit = settings.slope_unit()
         self.plot.set_units(show, unit)
+        self.plot.set_show_legend(settings.show_legend())
         self.raster_panel.set_show_units(show)
         self._update_footer()
         self._refresh_table()

@@ -281,7 +281,6 @@ class ProfilePlotWidget(QWidget):
 
     cursorChainage = pyqtSignal(object)   # float or None
     viewChanged = pyqtSignal()
-    legendToggled = pyqtSignal(bool)
 
     MODE_HOVER = "hover"
     MODE_CROSSHAIR = "crosshair"
@@ -627,23 +626,19 @@ class ProfilePlotWidget(QWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing, False)
 
     def _paint_readout(self, p, visible, ch, fm, colors):
-        bold = QFont(self.font())
-        bold.setBold(True)
-        bfm = QFontMetricsF(bold)
+        """Legend box: one row per raster with its value at the pointer's
+        chainage (the chainage itself is in the hover/crosshair tooltip)."""
         rows = []
         for s in visible:
             val = s.profile.value_at(ch) if ch is not None else None
             label = s.name + (" (bilinear)" if s.profile.interpolated else "")
             rows.append((s, label, self._format(val) if ch is not None else ""))
-        title = "Ch {}".format(self._format(ch, True)) if ch is not None else ""
         name_w = max(fm.horizontalAdvance(r[1]) for r in rows)
         val_w = max([fm.horizontalAdvance(r[2]) for r in rows] + [0])
         swatch = 18
         w = 8 + swatch + 6 + name_w + (14 + val_w if val_w else 0) + 8
-        if title:
-            w = max(w, bfm.horizontalAdvance(title) + 16)
         line_h = fm.height() + 2
-        h = 6 + (bfm.height() + 2 if title else 0) + line_h * len(rows) + 4
+        h = 6 + line_h * len(rows) + 4
         r = self._plot_rect
         w = min(w, r.width() - 8)
         box = QRectF(r.right() - w - 6, r.top() + 6, w, h)
@@ -652,13 +647,7 @@ class ProfilePlotWidget(QWidget):
         p.setPen(QPen(colors["grid"]))
         p.setBrush(bg)
         p.drawRect(box)
-        y = box.top() + 4
-        if title:
-            p.setFont(bold)
-            p.setPen(QPen(colors["fg"]))
-            p.drawText(QPointF(box.left() + 8, y + bfm.ascent()), title)
-            y += bfm.height() + 2
-            p.setFont(self.font())
+        y = box.top() + 5
         for s, label, val in rows:
             mid = y + line_h / 2
             pen = QPen(s.color)
@@ -798,10 +787,6 @@ class ProfilePlotWidget(QWidget):
     def contextMenuEvent(self, event):
         menu = QMenu(self)
         menu.addAction("Zoom full", self.zoom_full)
-        legend = menu.addAction("Show legend")
-        legend.setCheckable(True)
-        legend.setChecked(self.show_legend)
-        legend.toggled.connect(self.legendToggled.emit)
         menu.addSeparator()
         self.add_export_actions(menu)
         menu.exec(event.globalPos())

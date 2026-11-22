@@ -28,7 +28,6 @@ _MAP = {
     "zoom_full": (["/mActionZoomFullExtent.svg"], "zoom_full.svg"),
     "export": (["/mActionSharingExport.svg"], "export.svg"),
     "temporary": (["/mActionCreateMemory.svg", "/mIconMemory.svg"], "temporary.svg"),
-    "legend": (["/legend.svg", "/mLayoutItemLegend.svg"], "legend.svg"),
     "image": (["/mActionSaveMapAsImage.svg"], None),
     "svg": (["/mActionSaveAsSVG.svg"], None),
     "copy": (["/mActionEditCopy.svg"], None),

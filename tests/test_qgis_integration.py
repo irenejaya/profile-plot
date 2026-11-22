@@ -380,12 +380,12 @@ def test_units_setting(env):
     dock = env["plugin"].dock
     settings.set("showUnits", True)
     settings.set("unit", "m AHD")
-    dock._apply_units()
+    dock._apply_settings()
     assert dock.plot.unit_suffix() == " m AHD"
     assert dock.plot.unit_suffix(True) == " m"
     assert dock.lbl_length.text().endswith(" m")
     settings.set("showUnits", False)
-    dock._apply_units()
+    dock._apply_settings()
     assert dock.plot.unit_suffix() == ""
     assert not dock.lbl_length.text().endswith(" m")
 
@@ -469,17 +469,80 @@ def test_color_box_changes_curve_colour_without_rebuilding(env):
     assert btn.color().name() == "#8c5a2b"
 
 
-def test_legend_toggle(env):
+def test_legend_is_a_settings_tickbox(env):
     from profile_plot import settings
+    from profile_plot.settings import SettingsDialog
     dock = env["plugin"].dock
-    dock.act_legend.setChecked(True)
-    dock.act_legend.setChecked(False)
-    assert not dock.plot.show_legend
-    assert settings.get("showLegend", True, bool) is False
-    dock.act_legend.setChecked(True)
+    assert not hasattr(dock, "act_legend")          # no toolbar icon
+    dlg = SettingsDialog(dock)
+    assert dlg.show_legend.text() == "Show legend"
+    dlg.show_legend.setChecked(True)
+    dlg.accept()
+    dock._apply_settings()
     assert dock.plot.show_legend
-    dock.plot.legendToggled.emit(False)   # from the plot's context menu
-    assert not dock.act_legend.isChecked() and not dock.plot.show_legend
+    dlg = SettingsDialog(dock)
+    assert dlg.show_legend.isChecked()
+    dlg.show_legend.setChecked(False)
+    dlg.accept()
+    dock._apply_settings()
+    assert not dock.plot.show_legend
+    assert settings.show_legend() is False
+
+
+def test_slope_unit_setting(env):
+    from profile_plot import settings
+    from profile_plot.settings import SettingsDialog
+    from qgis.core import QgsSettings
+    dock = env["plugin"].dock
+    s = dock.session
+    s.set_slope(s.rasters[0].uid)
+    draw(env, [(X0, Y), (X0 + 100, Y)])
+    QgsSettings().remove(settings.PREFIX + "slopeUnit")
+    assert settings.slope_unit() == "%"            # default
+    dock._apply_settings()
+    g = s.grade().grade
+    assert dock.lbl_slope.text().startswith("Average slope  {}%".format(
+        "{:.2f}".format(g).replace("-", "\u2212")))
+    dlg = SettingsDialog(dock)
+    dlg.slope_unit.setCurrentIndex(dlg.slope_unit.findData("m/m"))
+    dlg.accept()
+    dock._apply_settings()
+    expected = "{:.4f} m/m".format(g / 100).replace("-", "\u2212")
+    assert expected in dock.lbl_slope.text()
+    settings.set("slopeUnit", "%")
+    dock._apply_settings()
+    assert "%" in dock.lbl_slope.text()
+
+
+def test_legend_has_no_chainage_title(env):
+    plot = env["plugin"].dock.plot
+    plot.set_show_legend(True)
+    plot.grab()
+    r = plot._plot_rect
+    plot._cursor = QPointF(r.center().x(), r.center().y())
+    img = plot.grab()       # renders legend with values, no "Ch" title
+    assert not img.isNull()
+    plot._cursor = None
+    plot.set_show_legend(False)
+
+
+def test_raster_box_is_a_table(env):
+    from profile_plot.raster_list import COL_CELL, COL_NAME, GridDelegate
+    tree = env["plugin"].dock.raster_panel.tree
+    assert isinstance(tree.itemDelegate(), GridDelegate)
+    assert not tree.isHeaderHidden()
+    assert tree.headerItem().text(COL_NAME) == "Name"
+    assert tree.headerItem().text(COL_CELL) == "Res."
+    # Names and resolutions are not cut once the panel fits itself
+    dock = env["plugin"].dock
+    dock.resize(1100, 340)
+    dock.show()
+    env["app"].processEvents()
+    dock._fit_raster_panel()
+    env["app"].processEvents()
+    fm = tree.fontMetrics()
+    widest = max(fm.horizontalAdvance(e.name) for e in dock.session.rasters)
+    assert tree.header().sectionSize(COL_NAME) >= widest + 8
 
 
 def test_legend_hidden_by_default(tmp_path):
