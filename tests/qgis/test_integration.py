@@ -924,3 +924,50 @@ def test_unload_removes_toolbar_and_reload_has_one(tmp_path):
         assert len(bars) == 1
         plugin.unload()
         assert iface.mw.findChildren(QToolBar, "ProfilePlotToolbar") == []
+
+
+def test_add_button_adds_selected_raster_without_dialog(env, monkeypatch):
+    """+ adds the raster(s) selected in the Layers panel at once; the dialog
+    only opens when no raster is selected."""
+    from profile_plot.ui import raster_list
+    plugin = env["plugin"]
+    dock = plugin.dock
+    s = dock.session
+    iface = env["iface"]
+    opened = []
+    monkeypatch.setattr(raster_list.AddRasterDialog, "exec",
+                        lambda self: opened.append(True) or 0)
+    # start empty
+    for e in list(s.rasters):
+        s.remove_entry(e.uid)
+    alive = []
+    for lyr in env["layers"]:
+        try:
+            if QgsProject.instance().mapLayer(lyr.id()) is not None:
+                alive.append(lyr)
+        except RuntimeError:
+            pass
+    # one raster selected -> added directly, no dialog
+    iface.select_layers([alive[0]])
+    dock.raster_panel.add_button.click()
+    assert [e.layer_id for e in s.rasters] == [alive[0].id()] and opened == []
+    # several selected -> all new ones added, still no dialog
+    iface.select_layers(alive)
+    dock.add_rasters()
+    assert [e.layer_id for e in s.rasters] == [lyr.id() for lyr in alive] and opened == []
+    # selected raster already in the list -> nothing added, no dialog
+    dock.add_rasters()
+    assert len(s.rasters) == len(alive) and opened == []
+    # nothing selected (and no raster active) -> the dialog opens
+    iface.select_layers([])
+    iface.setActiveLayer(None)
+    dock.add_rasters()
+    assert opened == [True]
+    # active raster layer counts as selected when the panel has no selection
+    for e in list(s.rasters):
+        s.remove_entry(e.uid)
+    iface.setActiveLayer(alive[0])
+    dock.add_rasters()
+    assert [e.layer_id for e in s.rasters] == [alive[0].id()] and opened == [True]
+    iface.setActiveLayer(None)
+    s.add_layers(alive)

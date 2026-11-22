@@ -485,14 +485,38 @@ class ProfileDock(QgsDockWidget):
     # rasters
     # ------------------------------------------------------------------
 
-    def add_rasters(self):
-        pre = set()
+    def _selected_rasters(self):
+        """Raster layers selected in the Layers panel (or the active layer
+        when it is a raster), in panel order."""
+        layers = []
         try:
-            pre = {lyr.id() for lyr in self.iface.layerTreeView().selectedLayers()
-                   if isinstance(lyr, QgsRasterLayer)}
+            view = self.iface.layerTreeView()
+            if view is not None:
+                layers = [lyr for lyr in view.selectedLayers() if isinstance(lyr, QgsRasterLayer)]
         except Exception:
-            pass
-        dlg = AddRasterDialog(self.session, pre, self)
+            layers = []
+        if not layers:
+            active = self.iface.activeLayer()
+            if isinstance(active, QgsRasterLayer):
+                layers = [active]
+        return layers
+
+    def add_rasters(self):
+        """The + button.  Rasters selected in the Layers panel are added
+        straight away, no dialog.  With no raster selected, a dialog lets
+        you pick project rasters or browse for files."""
+        selected = self._selected_rasters()
+        if selected:
+            new = [lyr for lyr in selected if not self.session.has_layer(lyr.id())]
+            if new:
+                self.session.add_layers(new)
+            else:
+                names = ", ".join(lyr.name() for lyr in selected)
+                self.iface.messageBar().pushMessage(
+                    "Profile Plot", "Already in the list: {}".format(names),
+                    Qgis.MessageLevel.Info, 3)
+            return
+        dlg = AddRasterDialog(self.session, set(), self)
         if not dlg.exec():
             return
         self.session.add_layers(dlg.selected_layers())

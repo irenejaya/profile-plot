@@ -57,6 +57,14 @@ def app():
     return _app
 
 
+class _FakeLayerTreeView:
+    def __init__(self):
+        self.selected = []
+
+    def selectedLayers(self):
+        return list(self.selected)
+
+
 class FakeIface(QObject):
     def __init__(self):
         super().__init__()
@@ -70,6 +78,7 @@ class FakeIface(QObject):
         self.bar.widgetAdded.connect(self._on_message)
         self._active = None
         self._pan = QAction("Pan", self.mw)
+        self._tree_view = _FakeLayerTreeView()
         self.registered = []
 
     def _on_message(self, w):
@@ -115,7 +124,11 @@ class FakeIface(QObject):
         self.mw.removeDockWidget(dock)
 
     def layerTreeView(self):
-        return None
+        return self._tree_view
+
+    def select_layers(self, layers):
+        """Simulate selecting layers in the Layers panel."""
+        self._tree_view.selected = list(layers)
 
     def activeLayer(self):
         return self._active

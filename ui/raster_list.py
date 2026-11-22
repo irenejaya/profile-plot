@@ -337,7 +337,9 @@ class RasterPanel(QWidget):
         self.add_button.setIconSize(QSize(18, 18))
         self.add_button.setAutoRaise(True)
         self.add_button.setAccessibleName("Add raster")
-        self.add_button.setToolTip("Add raster\nAdd one or more rasters from the project or from files.\n"
+        self.add_button.setToolTip("Add raster\n"
+                                   "Adds the raster(s) selected in the Layers panel straight away.\n"
+                                   "With no raster selected, choose from the project or from files.\n"
                                    "You can also drag layers here from the Layers panel or Browser.")
         self.add_button.clicked.connect(self.addRequested)
         head.addWidget(self.add_button)

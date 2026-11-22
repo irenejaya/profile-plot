@@ -86,8 +86,10 @@ or hide it under *View ▸ Toolbars*) and under *Raster ▸ Profile Plot*.
 
 1. **Open:** click the Profile Plot icon on the Profile Plot toolbar. The dock opens at the
    bottom of the window.
-2. **Add rasters:** click the green **+** and tick one or more rasters. You can also drag
-   layers into the dock from the Layers panel or the Browser.
+2. **Add rasters:** select your raster(s) in the Layers panel and click the green **+**. They
+   are added straight away, with no dialog. You can also drag layers into the dock from the
+   Layers panel or the Browser. With no raster selected, **+** opens a list of the project's
+   rasters plus *Browse files…*.
 3. **Draw:** click the icon again (or press your shortcut, or click **Draw line**). Click
    points on the map, then right-click to finish.
 
@@ -158,7 +160,9 @@ a new line or close the dock.
 | **Name** (tick, colour, name) | Tick to show or hide the curve. Click the colour box to choose any colour with the QGIS colour picker. |
 | **Δx** | Resolution (cell size) of the raster, in its CRS units. |
 
-* **Add:** click **+**, or drag layers from the Layers panel or Browser.
+* **Add:** select raster(s) in the Layers panel and click **+**; they are added at once.
+  With nothing selected, **+** opens a list of project rasters and *Browse files…*. You can
+  also drag layers from the Layers panel or Browser.
 * **Reorder:** drag rows. The table and CSV follow this order.
 * **Row menu (right-click):** *Band* (for multi-band rasters), *Move up/down*,
   *Change colour…*, *Remove*.
