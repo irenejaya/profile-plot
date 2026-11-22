@@ -13,9 +13,12 @@ in about 90 ms:
 
 ![A 10 km DEM profile](docs/images/mockup_10km.png)
 
-**Zoom in on the same profile to see every 1 m cell as a step:**
+**Zoom in on the same profile: the line passes through every 1 m cell value:**
 
 ![Native 1 m cells at the river crossing](docs/images/mockup_10km_zoom.png)
+
+The profile is drawn as a smooth elevation line through the raster cell values. If you prefer
+to see each cell as a flat step, choose *Profile line: Steps* in Settings.
 
 ---
 
@@ -114,9 +117,10 @@ The assigned keys are shown in the icon's and the **Draw line** button's tooltip
 | New profile after finishing | just click again: the tool stays active |
 | Profile an existing line | select a line feature, then click **Use selected line** |
 
-While you draw, the finished part is solid magenta and the moving part is dashed. The ends are
-labelled **A** and **B**. The line stays on the map until you start a new one or close the
-dock.
+While you draw, the finished part is solid magenta and the moving part is dashed. **A** marks
+the first vertex as soon as you click it; **B** appears at the end when you finish. A is the
+start of chainage (0) and B is the end. The line and labels stay on the map until you start a
+new line or close the dock.
 
 ## The dock, part by part
 
@@ -183,6 +187,11 @@ grade.
   line you are still drawing. It disappears when the pointer leaves the plot.
 * **Legend** (off by default; turn on in Settings): a corner box listing each raster and its
   value at the pointer.
+* **Line:** a smooth line through the raster cell values (default), or flat steps, one per cell
+  (Settings ▸ Profile line). Zoomed out, the drawing is simplified to a few points per screen
+  column. The kept points stay at their true chainage, so the line looks the same as at full
+  resolution and narrow spikes are not lost. The tooltip and legend show the cell's own value,
+  so they match the table and CSV.
 * **Grid:** labelled lines, plus a light minor grid (every 1 m where it is legible, otherwise a
   regular subdivision).
 * **Gaps:** NoData breaks a curve. Gaps stay visible at every zoom level.
@@ -206,7 +215,7 @@ Choose in the footer's **Sampling** box. Your choice is remembered.
 
 | Mode | What you get | Use it for |
 |---|---|---|
-| **Native cells** (default) | Every cell the line crosses over a positive distance, with its entry and exit chainage, drawn as horizontal steps. Corner-only touches are ignored. | Checking the DEM as it really is, without interpolation. |
+| **Native cells** (default) | Every cell the line crosses over a positive distance, with its entry and exit chainage. Corner-only touches are ignored. Drawn as a smooth line through the cell values, or as steps (Settings). | Checking the DEM as it really is, without interpolation. |
 | **1 cm stations** | A value every 0.01 m (0.00, 0.01, 0.02, …) plus the end station, taken from the cell under each station. A 100 m line gives 10,001 stations. | Fixed-interval output for other software. |
 | **1 cm bilinear** | The same stations, bilinearly interpolated between cell centres. Labelled *(bilinear)* and drawn dashed. | Smooth surfaces; interpolated values are always labelled. |
 
@@ -216,7 +225,8 @@ below.
 ## Length, ΔZ and average slope
 
 * **Length:** horizontal chainage length, measured along every bend of the line.
-* **ΔZ:** end value − start value of the slope layer.
+* **ΔZ:** the elevation difference along the line on the slope layer, end value − start value
+  (B − A). `ΔZ −1.02` means B is 1.02 m lower than A.
 * **Average slope:** signed net grade, (end − start) ÷ length, over the whole line, in % or m/m
   (see Settings).
 
@@ -264,7 +274,10 @@ Images match what you see, including the legend if it's on.
 | Setting | Default | Effect |
 |---|---|---|
 | Show legend | off | Corner box with each raster and its value at the pointer. |
-| Show units | off | Adds `m` to chainage and your elevation unit to the axes, tooltips, footer, table and CSV headings. |
+| Profile line | Smooth line | *Smooth line* through the cell values, or *Steps (native cells)*. |
+| X-axis title | Chainage | Title under the plot. Leave it empty to return to the default. |
+| Y-axis title | Elevation | Title beside the plot. Leave it empty to return to the default. |
+| Show units | off | Adds `m` to the X axis and your elevation unit to the Y axis, plus units in the tooltips, footer, table and CSV headings. |
 | Elevation unit | `m` | Label used when units are shown, e.g. `m AHD`, `ft`. |
 | Slope unit | % | Average slope in % or m/m. |
 
@@ -324,6 +337,8 @@ and 90 ms to all native values.
 
 | You see | Why / what to do |
 |---|---|
+| What is ΔZ in the footer? | End minus start elevation of the slope layer (B − A). Shown only when a slope layer is selected. |
+| Why A and B on the map? | They mark the start (A, chainage 0) and end (B) of the line, so you can see which way the profile runs. |
 | *Average slope unavailable* | An end of the line is outside the slope raster or on NoData. Move the ends onto data. |
 | *endpoint grade across gap, coverage …* | The ends are valid but the line crosses NoData. The grade uses the two ends. |
 | *Preview from overview — refining…* | Full-resolution values are still loading (large rasters, network drives). It disappears when done; Export CSV waits for it. |

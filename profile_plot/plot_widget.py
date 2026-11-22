@@ -164,38 +164,37 @@ def _runs(finite):
 
 
 def _decimate(xpix, vals, run_ids, width):
-    """First/min/max/last per (run, pixel column), in chainage order.
+    """Keep the first, minimum, maximum and last point of every (run,
+    screen column), in chainage order and at their true chainage.
 
-    Returns (points (4G, 2) as [x, value], group_run_ids)."""
+    Drawing the kept points gives the same picture as drawing every point,
+    so long slopes stay smooth and narrow spikes are not lost.
+    Returns (points (4G, 2) as [x_pixel, value], group_run_ids)."""
     col = np.clip(np.floor(xpix), -1, width + 1).astype(np.int64)
     key = run_ids * (width + 4) + (col + 1)
     gs = np.concatenate(([0], np.flatnonzero(key[1:] != key[:-1]) + 1))
     ge = np.concatenate((gs[1:], [key.size]))
-    first = vals[gs]
-    last = vals[ge - 1]
     mn = np.minimum.reduceat(vals, gs)
     mx = np.maximum.reduceat(vals, gs)
     counts = ge - gs
     idx = np.arange(vals.size)
     big = vals.size + 1
-    first_min = np.minimum.reduceat(np.where(vals == np.repeat(mn, counts), idx, big), gs)
-    first_max = np.minimum.reduceat(np.where(vals == np.repeat(mx, counts), idx, big), gs)
-    min_first = first_min <= first_max
-    a = np.where(min_first, mn, mx)
-    b = np.where(min_first, mx, mn)
-    xg = col[gs] + 0.5
-    g = gs.size
-    pts = np.empty((g, 4, 2))
-    pts[:, :, 0] = xg[:, None]
-    pts[:, 0, 1] = first
-    pts[:, 1, 1] = a
-    pts[:, 2, 1] = b
-    pts[:, 3, 1] = last
-    return pts.reshape(-1, 2), run_ids[gs]
+    i_min = np.minimum.reduceat(np.where(vals == np.repeat(mn, counts), idx, big), gs)
+    i_max = np.minimum.reduceat(np.where(vals == np.repeat(mx, counts), idx, big), gs)
+    i_a = np.minimum(i_min, i_max)
+    i_b = np.maximum(i_min, i_max)
+    order = np.stack((gs, i_a, i_b, ge - 1), axis=1).reshape(-1)
+    pts = np.empty((order.size, 2))
+    pts[:, 0] = xpix[order]
+    pts[:, 1] = vals[order]
+    return pts, run_ids[gs]
 
 
-def series_polylines(profile, xmin, xmax, ymin, ymax, rect):
-    """Pixel-space polylines (list of (k, 2) arrays) for one profile."""
+def series_polylines(profile, xmin, xmax, ymin, ymax, rect, style="smooth"):
+    """Pixel-space polylines (list of (k, 2) arrays) for one profile.
+
+    Native cells are drawn as a smooth line through the cell values
+    (``style="smooth"``) or as horizontal steps (``style="steps"``)."""
     left, top, w, h = rect.left(), rect.top(), rect.width(), rect.height()
     if w <= 1 or h <= 1 or xmax <= xmin or ymax <= ymin:
         return []
@@ -225,11 +224,14 @@ def series_polylines(profile, xmin, xmax, ymin, ymax, rect):
             X0 = np.clip(left + (x0 - xmin) * sx, left - _CLAMP, left + w + _CLAMP)
             X1 = np.clip(left + (x1 - xmin) * sx, left - _CLAMP, left + w + _CLAMP)
             Y = np.clip(top + (ymax - v) * sy, top - _CLAMP, top + h + _CLAMP)
-            pts = np.empty((x0.size * 2, 2))
-            pts[0::2, 0] = X0
-            pts[1::2, 0] = X1
-            pts[0::2, 1] = Y
-            pts[1::2, 1] = Y
+            if style == "steps":
+                pts = np.empty((x0.size * 2, 2))
+                pts[0::2, 0] = X0
+                pts[1::2, 0] = X1
+                pts[0::2, 1] = Y
+                pts[1::2, 1] = Y
+            else:
+                XM = 0.5 * (X0 + X1)
             rs, re = _runs(finite)
             out = []
             for s, e in zip(rs, re):
@@ -239,7 +241,18 @@ def series_polylines(profile, xmin, xmax, ymin, ymax, rect):
                 else:
                     bounds = [s, e]
                 for bs, be in zip(bounds[:-1], bounds[1:]):
-                    out.append(pts[2 * bs:2 * be])
+                    if style == "steps":
+                        out.append(pts[2 * bs:2 * be])
+                    else:
+                        # through the cell centres, flat over the first and
+                        # last half-cell so the line spans the whole run
+                        n = be - bs
+                        seg = np.empty((n + 2, 2))
+                        seg[0] = (X0[bs], Y[bs])
+                        seg[1:-1, 0] = XM[bs:be]
+                        seg[1:-1, 1] = Y[bs:be]
+                        seg[-1] = (X1[be - 1], Y[be - 1])
+                        out.append(seg)
             return out
         xm = 0.5 * (x0 + x1)
         xpix = (xm - xmin) * sx
@@ -270,7 +283,7 @@ def series_polylines(profile, xmin, xmax, ymin, ymax, rect):
         run_start |= starts_extra
     run_ids = np.cumsum(run_start)[finite]
     pts, gr = _decimate(xpix[finite], v[finite], run_ids, width)
-    pts[:, 0] += left
+    pts[:, 0] = np.clip(pts[:, 0] + left, left - _CLAMP, left + w + _CLAMP)
     pts[:, 1] = np.clip(top + (ymax - pts[:, 1]) * sy, top - _CLAMP, top + h + _CLAMP)
     cut = np.flatnonzero(gr[1:] != gr[:-1]) + 1
     bounds = np.concatenate(([0], cut, [gr.size]))
@@ -344,6 +357,9 @@ class ProfilePlotWidget(QWidget):
         self.placeholder = ""
         self.status_text = ""
         self.show_legend = False
+        self.line_style = "smooth"
+        self.x_title = "Chainage"
+        self.y_title = "Elevation"
         self.auto_view = True
         self.view = (0.0, 1.0, 0.0, 1.0)
         self._cache = None
@@ -377,6 +393,19 @@ class ProfilePlotWidget(QWidget):
         self.show_units = bool(show)
         self.unit = unit or "m"
         self._invalidate()
+
+    def set_line_style(self, style):
+        style = "steps" if style == "steps" else "smooth"
+        if style != self.line_style:
+            self.line_style = style
+            self._invalidate()
+
+    def set_axis_titles(self, x_title, y_title):
+        x_title = (x_title or "").strip() or "Chainage"
+        y_title = (y_title or "").strip() or "Elevation"
+        if (x_title, y_title) != (self.x_title, self.y_title):
+            self.x_title, self.y_title = x_title, y_title
+            self._invalidate()
 
     def set_show_legend(self, show):
         self.show_legend = bool(show)
@@ -553,8 +582,8 @@ class ProfilePlotWidget(QWidget):
         p.drawRect(rect)
         # titles
         p.setPen(text_pen)
-        xtitle = "Chainage" + (" (m)" if self.show_units else "")
-        ytitle = "Elevation" + (" ({})".format(self.unit) if self.show_units else "")
+        xtitle = self.x_title + (" (m)" if self.show_units else "")
+        ytitle = self.y_title + (" ({})".format(self.unit) if self.show_units else "")
         tw = fm.horizontalAdvance(xtitle)
         p.drawText(QPointF(rect.center().x() - tw / 2,
                            rect.bottom() + fm.height() + fm.ascent() + 6), xtitle)
@@ -574,12 +603,16 @@ class ProfilePlotWidget(QWidget):
             prof = s.profile
             if prof is None:
                 continue
-            lines = series_polylines(prof, xmin, xmax, ymin, ymax, rect)
+            lines = series_polylines(prof, xmin, xmax, ymin, ymax, rect, self.line_style)
             self._polylines[s.uid] = lines
             pen = QPen(s.color)
             pen.setWidthF(1.6)
-            pen.setCapStyle(Qt.PenCapStyle.FlatCap)
-            pen.setJoinStyle(Qt.PenJoinStyle.MiterJoin)
+            if self.line_style == "steps":
+                pen.setCapStyle(Qt.PenCapStyle.FlatCap)
+                pen.setJoinStyle(Qt.PenJoinStyle.MiterJoin)
+            else:
+                pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+                pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
             if prof.interpolated:
                 pen.setStyle(Qt.PenStyle.DashLine)
             p.setPen(pen)

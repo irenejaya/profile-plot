@@ -72,7 +72,11 @@ def main():
 
     dock.act_cross.setChecked(True)
     from profile_plot import settings
-    settings.set("showLegend", False)   # default: legend hidden
+    # Defaults, so the screenshots show what a new user sees
+    for key, value in (("showLegend", False), ("showUnits", False), ("unit", "m"),
+                       ("slopeUnit", "%"), ("lineStyle", "smooth"),
+                       ("xTitle", "Chainage"), ("yTitle", "Elevation")):
+        settings.set(key, value)
     dock._apply_settings()
     plot.grab()
     at(50.0, dem.value_at(50.0))

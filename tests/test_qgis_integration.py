@@ -727,3 +727,75 @@ def test_end_tick_label_inside_plot(env):
               for y in band]
     assert any(inside)
     plot.view, plot.auto_view = saved
+
+
+def _steps_profile(x0, x1, v):
+    from profile_plot.assembly import RasterProfile
+    x0 = np.asarray(x0, float)
+    x1 = np.asarray(x1, float)
+    v = np.asarray(v, float)
+    return RasterProfile("steps", x0, x1, v, float(x1[-1]))
+
+
+def test_smooth_line_through_cell_centres_and_steps_option():
+    from qgis.PyQt.QtCore import QRectF
+    from profile_plot.plot_widget import series_polylines
+    prof = _steps_profile([0, 1, 2], [1, 2, 3], [10, 12, 11])
+    rect = QRectF(0, 0, 300, 100)          # 100 px per metre, y 10..12 -> 0..100
+    smooth = series_polylines(prof, 0, 3, 10, 12, rect, "smooth")
+    assert len(smooth) == 1
+    xs = smooth[0][:, 0].tolist()
+    assert xs == [0, 50, 150, 250, 300]     # ends + cell centres
+    steps = series_polylines(prof, 0, 3, 10, 12, rect, "steps")
+    assert steps[0][:, 0].tolist() == [0, 100, 100, 200, 200, 300]
+
+
+def test_zoomed_out_line_is_smooth_and_keeps_spikes():
+    """The zoomed-out drawing keeps points at their true chainage (a ramp
+    stays a straight diagonal, not vertical bars) and keeps narrow spikes."""
+    from qgis.PyQt.QtCore import QRectF
+    from profile_plot.plot_widget import series_polylines
+    n = 100000                              # 10 km of 0.1 m cells
+    x0 = np.arange(n) * 0.1
+    v = x0 * 0.01                            # a smooth 1 % ramp, 0..100
+    v[61234] += 20.0                         # one narrow embankment cell
+    prof = _steps_profile(x0, x0 + 0.1, v)
+    rect = QRectF(0, 0, 800, 400)
+    lines = series_polylines(prof, 0, n * 0.1, 0, 130, rect, "smooth")
+    pts = np.vstack(lines)
+    assert pts.shape[0] < 4 * 800 + 10       # decimated
+    ys = 130 - pts[:, 1] * 130 / 400         # pixel row back to elevation
+    ch = pts[:, 0] / 800 * (n * 0.1)        # pixel column back to chainage
+    assert ys.max() == pytest.approx(v.max(), abs=1e-6)    # spike kept
+    # every kept point away from the spike lies on the ramp
+    away = np.abs(ch - 6123.45) > 20
+    assert np.abs(ys[away] - ch[away] * 0.01).max() < 0.02
+    # no vertical bars: x positions are distinct for consecutive points
+    assert (np.diff(pts[:, 0]) > 0).mean() > 0.4
+
+
+def test_axis_titles_and_line_style_settings(env):
+    from profile_plot import settings
+    from profile_plot.settings import SettingsDialog
+    dock = env["plugin"].dock
+    dlg = SettingsDialog(dock)
+    assert dlg.x_title.text() == "Chainage" and dlg.y_title.text() == "Elevation"
+    assert dlg.line_style.currentData() == "smooth"
+    dlg.x_title.setText("Distance along creek")
+    dlg.y_title.setText("Level")
+    dlg.line_style.setCurrentIndex(dlg.line_style.findData("steps"))
+    dlg.accept()
+    dock._apply_settings()
+    assert (dock.plot.x_title, dock.plot.y_title) == ("Distance along creek", "Level")
+    assert dock.plot.line_style == "steps"
+    assert not dock.plot.render_image(1.0).isNull()
+    # empty titles fall back to the defaults
+    dlg = SettingsDialog(dock)
+    dlg.x_title.setText("")
+    dlg.y_title.setText("  ")
+    dlg.line_style.setCurrentIndex(dlg.line_style.findData("smooth"))
+    dlg.accept()
+    dock._apply_settings()
+    assert (settings.x_title(), settings.y_title()) == ("Chainage", "Elevation")
+    assert (dock.plot.x_title, dock.plot.y_title) == ("Chainage", "Elevation")
+    assert dock.plot.line_style == "smooth"

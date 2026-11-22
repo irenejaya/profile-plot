@@ -175,7 +175,8 @@ class ProfileDock(QgsDockWidget):
         bar.addWidget(self.image_button)
         bar.addStretch(1)
         self.act_settings = QAction(icons.icon("settings"), "Settings", self)
-        self.act_settings.setToolTip("Profile Plot settings (legend, units, slope unit)")
+        self.act_settings.setToolTip("Profile Plot settings (legend, line, axis titles, units, "
+                                     "slope unit)")
         b_set = _tool_button(self.act_settings)
         b_set.setAccessibleName("Profile Plot settings")
         bar.addWidget(b_set)
@@ -673,6 +674,8 @@ class ProfileDock(QgsDockWidget):
         self.slope_unit = settings.slope_unit()
         self.plot.set_units(show, unit)
         self.plot.set_show_legend(settings.show_legend())
+        self.plot.set_line_style(settings.line_style())
+        self.plot.set_axis_titles(settings.x_title(), settings.y_title())
         self.raster_panel.set_show_units(show)
         self._update_footer()
         self._refresh_table()
