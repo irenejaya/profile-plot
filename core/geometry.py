@@ -27,7 +27,7 @@ def _metres_unit():
         return Qgis.DistanceUnit.Meters
     except AttributeError:  # QGIS < 3.30
         from qgis.core import QgsUnitTypes
-        return QgsUnitTypes.DistanceMeters
+        return QgsUnitTypes.DistanceUnit.DistanceMeters
 
 
 def is_good_measure_crs(crs):

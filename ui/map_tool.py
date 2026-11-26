@@ -1,11 +1,15 @@
 """Line capture map tool and the alignment canvas item."""
 
+import logging
+
 from qgis.core import QgsApplication, QgsPointXY
 from qgis.gui import QgsMapCanvasItem, QgsMapTool, QgsSnapIndicator
 from qgis.PyQt.QtCore import QRectF, Qt, pyqtSignal
 from qgis.PyQt.QtGui import QBrush, QColor, QFont, QFontMetricsF, QPainter, QPen
 
 from ..core.compat import flag_int
+
+_log = logging.getLogger(__name__)
 
 LINE_COLOR = QColor("#e815e8")
 MARKER_COLOR = QColor("#ffd60a")
@@ -45,7 +49,7 @@ class ProfileMapTool(QgsMapTool):
                 self._snap.setMatch(event.mapPointMatch())
                 return QgsPointXY(p)
             except Exception:
-                pass
+                _log.debug("Snapping failed; using unsnapped point", exc_info=True)
         return QgsPointXY(event.mapPoint())
 
     def canvasPressEvent(self, event):
