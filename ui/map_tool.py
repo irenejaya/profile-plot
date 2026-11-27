@@ -13,6 +13,7 @@ _log = logging.getLogger(__name__)
 
 LINE_COLOR = QColor("#e815e8")
 MARKER_COLOR = QColor("#ffd60a")
+PIN_COLOR = QColor(55, 71, 79)      # same as the plot's marker lines
 
 
 class ProfileMapTool(QgsMapTool):
@@ -137,6 +138,7 @@ class ProfileCanvasItem(QgsMapCanvasItem):
         self.tail = None
         self.finished = False
         self.marker = None
+        self.pins = []        # plot markers on the map: QgsPointXY, numbered 1..n
         self.show_ab = False   # A/B labels and end markers (Settings)
         self._font = QFont()
         self._font.setBold(True)
@@ -187,6 +189,11 @@ class ProfileCanvasItem(QgsMapCanvasItem):
             dirty.append(self._px(tail))
         self.update(self._rect_of(dirty))
 
+    def set_pins(self, points):
+        """Numbered markers matching the plot's markers (None = off map)."""
+        self.pins = list(points)
+        self.update()
+
     def set_marker(self, point):
         dirty = []
         if self.marker is not None:
@@ -207,6 +214,7 @@ class ProfileCanvasItem(QgsMapCanvasItem):
         self.points = []
         self.tail = None
         self.marker = None
+        self.pins = []
         self.update()
 
     # -- painting ---------------------------------------------------------------------
@@ -249,6 +257,17 @@ class ProfileCanvasItem(QgsMapCanvasItem):
             self._label(painter, pts[0], "A")
             if self.finished and len(pts) > 1:
                 self._label(painter, pts[-1], "B")
+        for n, pin in enumerate(self.pins, start=1):
+            if pin is None:
+                continue
+            q = self._px(pin)
+            painter.setPen(QPen(QColor("#ffffff"), 1.5))
+            painter.setBrush(QBrush(PIN_COLOR))
+            painter.drawEllipse(q, 7.5, 7.5)
+            painter.setFont(self._font)
+            painter.setPen(QPen(QColor("#ffffff")))
+            painter.drawText(QRectF(q.x() - 8, q.y() - 8, 16, 16),
+                             flag_int(Qt.AlignmentFlag.AlignCenter), str(n))
         if self.marker is not None:
             m = self._px(self.marker)
             painter.setPen(QPen(QColor("#202020"), 1.5))

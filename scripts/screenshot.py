@@ -111,6 +111,27 @@ def main():
     dock.image_menu.grab().save(os.path.join(out, "export_menu.png"))
     dock.image_menu.hide()
 
+    # Hover markers (double-click) + the matching numbered dots on the map
+    dock.act_hover.trigger()
+    for ch_m in (22.0, 50.0, 71.0):
+        plot.add_marker(ch_m)
+    at(86.0, dem.value_at(86.0))
+    iface.canvas.refresh()
+    iface.canvas.waitWhileRendering()
+    app.processEvents()
+    iface.mw.grab().save(os.path.join(out, "window_markers.png"))
+    dock.grab().save(os.path.join(out, "dock_markers.png"))
+    plot.clear_markers()
+
+    # Crosshair snapped onto the DEM line
+    dock.act_cross.trigger()
+    sx, sy = plot._to_px(36.0, plot.curve_value(dem, 36.0))
+    plot._cursor = QPointF(sx, sy - 4)
+    plot.update()
+    app.processEvents()
+    dock.grab().save(os.path.join(out, "dock_crosshair_snap.png"))
+    plot._cursor = None
+
     # Measure mode: three points on the DEM, then the pointer for a live segment
     dock.act_measure.trigger()
     plot._cursor = None

@@ -32,8 +32,11 @@ from ..core.compat import flag_int
 TOOLTIP_ALPHA = 179
 # Exported raster images are rendered at this multiple of screen resolution.
 EXPORT_SCALE = 2.0
-# Measure mode: a click within this many pixels of a curve lands on it.
-MEASURE_SNAP_PX = 6.0
+# Crosshair and Measure: within this many pixels of a curve, lock onto it.
+CURVE_SNAP_PX = 6.0
+MEASURE_SNAP_PX = CURVE_SNAP_PX
+# Markers (Hover mode, double-click)
+MARKER_COLOR = QColor(55, 71, 79)
 # A press that moves less than this is a click (adds a point), more pans.
 CLICK_SLOP_PX = 4.0
 MEASURE_COLOR = QColor("#e03131")
@@ -308,6 +311,7 @@ class ProfilePlotWidget(QWidget):
     """Elevation vs chainage chart."""
 
     cursorChainage = pyqtSignal(object)   # float or None
+    markersChanged = pyqtSignal(list)     # chainages of the markers, in number order
     viewChanged = pyqtSignal()
 
     MODE_HOVER = "hover"
@@ -347,6 +351,7 @@ class ProfilePlotWidget(QWidget):
         # measurement in data coordinates (chainage, elevation)
         self.measure_pts = []
         self.measure_done = False
+        self.markers = []          # chainages; marker number = index + 1
         self.slope_unit = "%"
         self._mids_cache = {}
 
@@ -384,6 +389,44 @@ class ProfilePlotWidget(QWidget):
         self.measure_pts = []
         self.measure_done = False
         self.update()
+
+    # -- markers (Hover mode) ----------------------------------------------------------
+
+    def add_marker(self, chainage):
+        """Leave a vertical marker at ``chainage`` (Hover mode)."""
+        chainage = min(max(float(chainage), 0.0), max(self.length, 0.0))
+        self.markers.append(chainage)
+        self._invalidate()
+        self.markersChanged.emit(list(self.markers))
+
+    def remove_marker(self, index):
+        if 0 <= index < len(self.markers):
+            del self.markers[index]
+            self._invalidate()
+            self.markersChanged.emit(list(self.markers))
+
+    def clear_markers(self):
+        if self.markers:
+            self.markers = []
+            self._invalidate()
+            self.markersChanged.emit([])
+
+    def clear_annotations(self):
+        """Markers and measurement, e.g. when a new profile is drawn."""
+        self.clear_measure()
+        self.clear_markers()
+
+    def marker_near(self, px, tol=CURVE_SNAP_PX):
+        """Index of the marker whose line is within ``tol`` pixels of x."""
+        best = None
+        for i, ch in enumerate(self.markers):
+            d = abs(self._to_px(ch, 0.0)[0] - px)
+            if d <= tol and (best is None or d < best[0]):
+                best = (d, i)
+        return None if best is None else best[1]
+
+    def marker_label(self, index):
+        return "{} \u00b7 {}".format(index + 1, self.hover_chainage_text(self.markers[index]))
 
     def finish_measure(self):
         if len(self.measure_pts) < 2:
@@ -428,12 +471,15 @@ class ProfilePlotWidget(QWidget):
         t = (chainage - xs[a]) / (xs[b] - xs[a]) if xs[b] > xs[a] else 0.0
         return float(va + t * (vb - va))
 
-    def measure_point(self, px, py, snap=True):
-        """Data point for a click at pixel (px, py): on the nearest curve
-        when one is within MEASURE_SNAP_PX vertically, else where clicked."""
+    def snap_to_curve(self, px, py, snap=True):
+        """(chainage, elevation, series) for pixel (px, py).  When a drawn
+        curve is within CURVE_SNAP_PX vertically, the elevation is that
+        curve's value and ``series`` is the curve; otherwise the point is
+        free (``series`` is None).  One lookup per curve: cheap enough for
+        every mouse move."""
         ch, y = self._to_data(px, py)
+        best = None
         if snap:
-            best = None
             for series in self.series:
                 if series.profile is None:
                     continue
@@ -442,10 +488,16 @@ class ProfilePlotWidget(QWidget):
                     continue
                 _, vy = self._to_px(ch, v)
                 d = abs(vy - py)
-                if d <= MEASURE_SNAP_PX and (best is None or d < best[0]):
-                    best = (d, v)
-            if best is not None:
-                y = best[1]
+                if d <= CURVE_SNAP_PX and (best is None or d < best[0]):
+                    best = (d, v, series)
+        if best is not None:
+            return ch, best[1], best[2]
+        return ch, y, None
+
+    def measure_point(self, px, py, snap=True):
+        """Data point for a click at pixel (px, py): on the nearest curve
+        when one is within CURVE_SNAP_PX vertically, else where clicked."""
+        ch, y, _ = self.snap_to_curve(px, py, snap)
         return (ch, y)
 
     def add_measure_point(self, px, py, snap=True):
@@ -811,6 +863,9 @@ class ProfilePlotWidget(QWidget):
             p.drawText(QPointF(rect.left() + 6, rect.top() + fm.ascent() + 4),
                        self.status_text)
             p.setFont(self.font())
+        if self.markers:
+            # Part of the cached layer: pointer moves never redraw markers.
+            self._paint_markers(p, rect, fm)
         if export and self.show_legend:
             visible = [s for s in self.series if s.profile is not None]
             if visible:
@@ -845,14 +900,24 @@ class ProfilePlotWidget(QWidget):
         if cur is not None and rect.contains(cur) and self.length > 0:
             ch, ye = self._to_data(cur.x(), cur.y())
             if self.mode == self.MODE_CROSSHAIR:
+                # Lock onto a curve when close (Shift: always free)
+                ch, ye, snapped = self.snap_to_curve(cur.x(), cur.y(), not self._shift_down())
+                hy = self._to_px(ch, ye)[1] if snapped is not None else cur.y()
                 pen = QPen(colors["axis"])
                 pen.setStyle(Qt.PenStyle.DashLine)
                 p.setPen(pen)
                 p.drawLine(QPointF(cur.x(), rect.top()), QPointF(cur.x(), rect.bottom()))
-                p.drawLine(QPointF(rect.left(), cur.y()), QPointF(rect.right(), cur.y()))
+                p.drawLine(QPointF(rect.left(), hy), QPointF(rect.right(), hy))
+                if snapped is not None:
+                    p.save()
+                    p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+                    p.setPen(QPen(snapped.color, 2.0))
+                    p.setBrush(QColor(255, 255, 255, 200))
+                    p.drawEllipse(QPointF(cur.x(), hy), 4.5, 4.5)
+                    p.restore()
                 bg = QColor(255, 255, 255, TOOLTIP_ALPHA)
-                self._tooltip(p, cur, self.crosshair_text(ch, ye), bg, QColor("#000000"),
-                              QColor(0, 0, 0, 70))
+                self._tooltip(p, QPointF(cur.x(), hy), self.crosshair_text(ch, ye), bg,
+                              QColor("#000000"), QColor(0, 0, 0, 70))
             elif self.mode == self.MODE_HOVER:
                 self._paint_hover(p, cur.x(), ch, rect, colors, fm)
         if self.measure_pts:
@@ -882,6 +947,53 @@ class ProfilePlotWidget(QWidget):
         """Chainage label shown on the X axis under the hover guide."""
         return self._format(chainage, True)
 
+    def _values_box(self, p, x, rows, rect, fm, top=None):
+        """Box of coloured dots + values centred on x near the top of the
+        plot; returns its rectangle (None when there are no rows)."""
+        if not rows:
+            return None
+        dot = 9.0
+        pad = 7.0
+        gap = 6.0
+        line_h = fm.height() + 3
+        text_w = max(fm.horizontalAdvance(t) for _, t in rows)
+        w = pad + dot + gap + text_w + pad
+        h = pad + line_h * len(rows) + pad - 3
+        bx = min(max(x - w / 2, rect.left() + 2), rect.right() - w - 2)
+        by = rect.top() + 4 if top is None else top
+        box = QRectF(bx, by, w, h)
+        if p is None:
+            return box
+        p.setPen(QPen(QColor(0, 0, 0, 70), 1.0))
+        p.setBrush(QColor(255, 255, 255, TOOLTIP_ALPHA))
+        p.drawRoundedRect(box, 3, 3)
+        y = box.top() + pad - 1
+        for color, text in rows:
+            mid = y + line_h / 2
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(color)
+            p.drawEllipse(QPointF(bx + pad + dot / 2, mid), dot / 2, dot / 2)
+            p.setPen(QPen(QColor("#000000")))
+            p.drawText(QRectF(bx + pad + dot + gap, y, text_w + 2, line_h),
+                       flag_int(Qt.AlignmentFlag.AlignLeft, Qt.AlignmentFlag.AlignVCenter),
+                       text)
+            y += line_h
+        return box
+
+    def _axis_label(self, p, x, text, rect, fm, color=None):
+        """Dark label with a small pointer on the X axis at x."""
+        lw = fm.horizontalAdvance(text) + 12
+        lh = fm.height() + 6
+        lx = min(max(x - lw / 2, 1.0), self.width() - lw - 1)
+        ly = rect.bottom() + 5
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(color if color is not None else QColor(33, 33, 33, 240))
+        p.drawPolygon(QPolygonF([QPointF(x - 5, ly + 0.5), QPointF(x + 5, ly + 0.5),
+                                 QPointF(x, ly - 4.5)]))
+        p.drawRoundedRect(QRectF(lx, ly, lw, lh), 2, 2)
+        p.setPen(QPen(QColor("#ffffff")))
+        p.drawText(QRectF(lx, ly, lw, lh), flag_int(Qt.AlignmentFlag.AlignCenter), text)
+
     def _paint_hover(self, p, x, ch, rect, colors, fm):
         """Hover: a dashed vertical guide at the pointer, a box with the
         value of each plot (coloured dot + value) at the top of the guide,
@@ -892,46 +1004,43 @@ class ProfilePlotWidget(QWidget):
         guide.setStyle(Qt.PenStyle.DashLine)
         p.setPen(guide)
         p.drawLine(QPointF(x, rect.top()), QPointF(x, rect.bottom()))
+        self._values_box(p, x, self.hover_rows(ch), rect, fm)
+        self._axis_label(p, x, self.hover_chainage_text(ch), rect, fm)
+        p.restore()
 
-        rows = self.hover_rows(ch)
-        if rows:
-            dot = 9.0
-            pad = 7.0
-            gap = 6.0
-            line_h = fm.height() + 3
-            text_w = max(fm.horizontalAdvance(t) for _, t in rows)
-            w = pad + dot + gap + text_w + pad
-            h = pad + line_h * len(rows) + pad - 3
-            bx = min(max(x - w / 2, rect.left() + 2), rect.right() - w - 2)
-            box = QRectF(bx, rect.top() + 4, w, h)
-            p.setPen(QPen(QColor(0, 0, 0, 70), 1.0))
-            p.setBrush(QColor(255, 255, 255, TOOLTIP_ALPHA))
-            p.drawRoundedRect(box, 3, 3)
-            y = box.top() + pad - 1
-            for color, text in rows:
-                mid = y + line_h / 2
-                p.setPen(Qt.PenStyle.NoPen)
-                p.setBrush(color)
-                p.drawEllipse(QPointF(bx + pad + dot / 2, mid), dot / 2, dot / 2)
-                p.setPen(QPen(QColor("#000000")))
-                p.drawText(QRectF(bx + pad + dot + gap, y, text_w + 2, line_h),
-                           flag_int(Qt.AlignmentFlag.AlignLeft, Qt.AlignmentFlag.AlignVCenter),
-                           text)
-                y += line_h
-
-        label = self.hover_chainage_text(ch)
-        lw = fm.horizontalAdvance(label) + 12
-        lh = fm.height() + 6
-        lx = min(max(x - lw / 2, 1.0), self.width() - lw - 1)
-        ly = rect.bottom() + 5
-        dark = QColor(33, 33, 33, 240)
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(dark)
-        p.drawPolygon(QPolygonF([QPointF(x - 5, ly + 0.5), QPointF(x + 5, ly + 0.5),
-                                 QPointF(x, ly - 4.5)]))
-        p.drawRoundedRect(QRectF(lx, ly, lw, lh), 2, 2)
-        p.setPen(QPen(QColor("#ffffff")))
-        p.drawText(QRectF(lx, ly, lw, lh), flag_int(Qt.AlignmentFlag.AlignCenter), label)
+    def _paint_markers(self, p, rect, fm):
+        """Markers: a solid vertical line, the values box and a numbered
+        chainage label, like a hover that stays.  Drawn into the cached
+        layer, which is re-rendered whenever the profiles, the view or the
+        markers change, so the values follow live updates while pointer
+        moves stay as cheap as with no markers.  Boxes that would overlap
+        are stacked downwards."""
+        if not self.markers:
+            return
+        p.save()
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        placed = []
+        for i, ch in enumerate(self.markers):
+            x, _ = self._to_px(ch, 0.0)
+            if x < rect.left() - 1 or x > rect.right() + 1:
+                continue                       # scrolled out of view
+            p.setPen(QPen(MARKER_COLOR, 1.4))
+            p.drawLine(QPointF(x, rect.top()), QPointF(x, rect.bottom()))
+            rows = self.hover_rows(ch)
+            box = self._values_box(None, x, rows, rect, fm)
+            if box is not None:
+                top = box.top()
+                moved = True
+                while moved:
+                    moved = False
+                    for other in placed:
+                        if other.intersects(QRectF(box.left(), top, box.width(), box.height())):
+                            top = other.bottom() + 3
+                            moved = True
+                top = min(top, max(rect.top() + 2, rect.bottom() - box.height() - 2))
+                box = self._values_box(p, x, rows, rect, fm, top)
+                placed.append(box)
+            self._axis_label(p, x, self.marker_label(i), rect, fm, MARKER_COLOR)
         p.restore()
 
     def _tooltip(self, p, cur, text, bg, fg, border=None):
@@ -1073,6 +1182,11 @@ class ProfilePlotWidget(QWidget):
             if self.measuring():
                 self.finish_measure()
             return
+        if self.mode == self.MODE_HOVER:
+            pos = self._event_pos(event)
+            if self._plot_rect.contains(pos) and self.length > 0:
+                self.add_marker(self._to_data(pos.x(), pos.y())[0])
+            return
         self.zoom_full()
 
     def wheelEvent(self, event):
@@ -1100,8 +1214,15 @@ class ProfilePlotWidget(QWidget):
         self.viewChanged.emit()
         event.accept()
 
+    def keyReleaseEvent(self, event):
+        if event.key() == Qt.Key.Key_Shift:
+            self.update()
+        super().keyReleaseEvent(event)
+
     def keyPressEvent(self, event):
         key = event.key()
+        if key == Qt.Key.Key_Shift:
+            self.update()
         if key in (Qt.Key.Key_Home, Qt.Key.Key_0):
             self.zoom_full()
             return
@@ -1131,13 +1252,23 @@ class ProfilePlotWidget(QWidget):
         if self.mode == self.MODE_MEASURE and self.measuring():
             self.finish_measure()              # right-click finishes a measurement
             return
+        menu = self.build_context_menu(self._event_pos(event))
+        menu.exec(event.globalPos())
+
+    def build_context_menu(self, pos):
         menu = QMenu(self)
         menu.addAction("Zoom full", self.zoom_full)
+        near = self.marker_near(pos.x()) if pos is not None else None
+        if near is not None:
+            menu.addAction("Remove marker {}".format(self.marker_label(near)),
+                           lambda i=near: self.remove_marker(i))
+        if self.markers:
+            menu.addAction("Clear markers ({})".format(len(self.markers)), self.clear_markers)
         if self.measure_pts:
             menu.addAction("Clear measurement", self.clear_measure)
         menu.addSeparator()
         self.add_export_actions(menu)
-        menu.exec(event.globalPos())
+        return menu
 
     # -- export -----------------------------------------------------------------------
 

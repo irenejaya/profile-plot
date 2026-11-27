@@ -58,8 +58,9 @@ to see each cell as a flat step, choose *Profile line: Steps* in Settings.
   through a narrow kerb or embankment. Optional 1 cm stations, with or without bilinear
   interpolation.
 * **Hover and crosshair inspection.** Hover shows a vertical guide with every plot's value;
-  crosshair shows the chainage and elevation at the cursor. A yellow dot marks the same station
-  on the map.
+  double-click to leave as many numbered markers as you like, which also appear on the map.
+  Crosshair shows the chainage and elevation at the cursor and locks onto a curve when close.
+  A yellow dot marks the same station on the map.
 * **Measure in the plot.** Click points on the plot to read Total Length, Δ Distance,
   Δ Elevation and Slope.
 * **Optional slope layer.** Live length, ΔZ and average slope, in % or m/m.
@@ -214,8 +215,8 @@ The icon never changes QGIS's own snapping, so your editing is not affected.
 
 | Mode | Tooltip | Shown |
 |---|---|---|
-| **Crosshair** | `x[50.00], y[78.50]` on translucent white: chainage and elevation at the cursor, also between curves | whenever the pointer is in the plot |
-| **Hover** | A dashed vertical guide at the pointer. A box at the top lists the value of each plot at that chainage: a coloured dot and the value, highest first, no names. The chainage itself shows in a dark label on the X axis. | whenever the pointer is in the plot |
+| **Crosshair** | `x[50.00], y[78.50]` on translucent white: chainage and elevation at the cursor. Within a few pixels of a curve it locks onto the line (a small ring shows it) so it doesn't wobble; away from curves it moves freely. Hold **Shift** to always move freely. | whenever the pointer is in the plot |
+| **Hover** | A dashed vertical guide at the pointer. A box at the top lists the value of each plot at that chainage: a coloured dot and the value, highest first, no names. The chainage itself shows in a dark label on the X axis. **Double-click** to leave a marker there (see [Markers](#markers)). | whenever the pointer is in the plot |
 
 * **Map marker:** in both modes a yellow dot marks the same station on the map line, even on a
   line you are still drawing. It disappears when the pointer leaves the plot.
@@ -238,8 +239,31 @@ The icon never changes QGIS's own snapping, so your editing is not affected.
 | Ctrl + wheel | zoom chainage only |
 | Shift + wheel | zoom elevation only |
 | drag | pan |
-| double-click, Home or Zoom full | fit the whole profile |
-| right-click | *Zoom full*, *Clear measurement* (when there is one) and the image export options |
+| double-click | Hover: add a marker. Crosshair: fit the whole profile. Measure: finish the measurement. |
+| Home or Zoom full | fit the whole profile |
+| right-click | *Zoom full*, *Remove marker N* (on a marker), *Clear markers*, *Clear measurement* (when there is one) and the image export options |
+
+### Markers
+
+To remember a station, double-click in **Hover** mode. A marker stays there:
+
+* a solid vertical line in the plot, with the same values box Hover showed (one coloured dot and
+  value per raster) and a numbered chainage label, e.g. `2 · 50.00`;
+* a matching numbered dot on the profile line on the map.
+
+Add as many markers as you like. Their values are read from the current profiles, so they
+update if the profile changes (sampling mode, a raster added or hidden). Markers can only be
+added in Hover mode, but they stay visible in Crosshair and Measure.
+
+| Remove | How |
+|---|---|
+| one marker | right-click on its line ▸ *Remove marker N* (the others are renumbered) |
+| all markers | right-click ▸ *Clear markers* |
+
+A new profile line, or closing the dock, also clears the markers. Markers are part of the
+cached plot image, so even many of them don't slow down pointer moves.
+
+![Markers in the plot and on the map](docs/images/window_markers.png)
 
 ## Measuring in the plot
 
@@ -324,7 +348,8 @@ The **Table** tab has one column per visible raster, in table order.
 | Save as SVG | Vector image for reports; editable in Inkscape or Illustrator. |
 | Copy to clipboard | Paste straight into email, Word or PowerPoint. |
 
-Images match what you see, including the legend if it's on.
+Images match what you see, including markers and the legend if it's on. The live
+pointer readout and a measurement are not included.
 
 ![Export menu](docs/images/export_menu.png)
 
@@ -470,6 +495,9 @@ The layout follows the usual QGIS plugin repository shape: the root is the plugi
 * Snapping with a real layer and project snapping setup, on and off independently of QGIS's own
   snapping button.
 * Measuring with real mouse and keyboard events: curve snap, Shift, finish, undo, clear, pan.
+* Crosshair snapping, Hover markers in the plot and on the map (add, renumber on remove, clear,
+  export, cleared by a new line and by closing the dock), and pointer moves staying under 16 ms
+  with 50 markers.
 * The plugin ZIP layout, the own toolbar, and the reset when the dock is closed.
 
 ## License

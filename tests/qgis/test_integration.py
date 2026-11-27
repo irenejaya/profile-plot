@@ -1220,3 +1220,144 @@ def test_toolbar_order_snapping_with_zoom_full(env):
             seq.append(w.defaultAction().text())
     k = seq.index("Snapping")
     assert seq[k - 2:k + 2] == ["Measure", "|", "Snapping", "Zoom full"]
+
+
+# ---------------------------------------------------------------------------
+# Crosshair snapping and Hover markers
+# ---------------------------------------------------------------------------
+
+def _ready_plot(env, length=100):
+    dock = env["plugin"].dock
+    s = dock.session
+    if not s.rasters:
+        s.add_layers([lyr for lyr in env["layers"] if _alive(lyr)])
+    draw(env, [(X0, Y), (X0 + length, Y)])
+    dock.resize(1000, 340)
+    dock.show()
+    dock.plot.grab()
+    env["app"].processEvents()
+    return dock, s, dock.plot
+
+
+def test_crosshair_snaps_to_curve_but_moves_freely(env):
+    dock, s, plot = _ready_plot(env)
+    dock.act_cross.trigger()
+    dem = s.profiles[s.rasters[0].uid]
+    v = plot.curve_value(dem, 40.0)
+    x, y = plot._to_px(40.0, v)
+    # 4 px above the DEM line: locks onto it
+    ch, el, series = plot.snap_to_curve(x, y - 4)
+    assert series is not None and series.uid == s.rasters[0].uid
+    assert el == pytest.approx(v) and ch == pytest.approx(40.0, abs=0.2)
+    # 40 px away from every curve: free, the cursor's own elevation
+    ch, el, series = plot.snap_to_curve(x, y + 40)
+    assert series is None and el == pytest.approx(plot._to_data(x, y + 40)[1])
+    # Shift (snap=False): free even right next to the line
+    ch, el, series = plot.snap_to_curve(x, y - 4, snap=False)
+    assert series is None and el == pytest.approx(plot._to_data(x, y - 4)[1])
+    # painting a snapped crosshair works
+    plot._cursor = QPointF(x, y - 4)
+    assert not plot.grab().isNull()
+    plot._cursor = None
+
+
+def test_hover_markers_plot_and_map(env):
+    dock, s, plot = _ready_plot(env)
+    dock.act_hover.trigger()
+    seen = []
+    plot.markersChanged.connect(lambda chs: seen.append(list(chs)))
+    # double-click in Hover adds markers (as many as wanted)
+    for ch in (25.0, 60.0, 80.0):
+        x, y = plot._to_px(ch, plot.curve_value(s.profiles[s.rasters[0].uid], ch))
+        _click(plot, x, y)
+        _send_mouse(plot, "double", x, y)
+        _send_mouse(plot, "release", x, y)
+    assert len(plot.markers) == 3
+    assert plot.markers[0] == pytest.approx(25.0, abs=0.2)
+    assert seen[-1] == plot.markers
+    # numbered dots on the map line at the same stations
+    pins = dock.canvas_item.pins
+    assert len(pins) == 3
+    a, b = s.line_points[0], s.line_points[-1]
+    for ch, pin in zip(plot.markers, pins):
+        t = ch / s.total_length()
+        assert pin.x() == pytest.approx(a.x() + t * (b.x() - a.x()), abs=1e-6)
+        assert pin.y() == pytest.approx(a.y() + t * (b.y() - a.y()), abs=1e-6)
+    # each marker keeps the hover values (live from the current profiles)
+    rows = plot.hover_rows(plot.markers[1])
+    assert len(rows) >= 2
+    s.set_visible(s.rasters[1].uid, False)
+    H.wait_idle(s)
+    assert len(plot.hover_rows(plot.markers[1])) == len(rows) - 1
+    s.set_visible(s.rasters[1].uid, True)
+    H.wait_idle(s)
+    assert plot.marker_label(0) == "1 · {:.2f}".format(plot.markers[0])
+    assert not plot.grab().isNull()
+    # markers are in exported images
+    img_with = plot.render_image(1.0, opaque=True)
+    # Crosshair and Measure: double-click does not add a marker
+    dock.act_cross.trigger()
+    x, y = plot._to_px(40.0, 80.0)
+    _send_mouse(plot, "double", x, y)
+    _send_mouse(plot, "release", x, y)
+    dock.act_measure.trigger()
+    _send_mouse(plot, "double", x, y)
+    _send_mouse(plot, "release", x, y)
+    plot.clear_measure()
+    dock.act_hover.trigger()
+    assert len(plot.markers) == 3
+    # right-click menu: remove the marker under the pointer, then clear all
+    mx = plot._to_px(plot.markers[1], 0)[0]
+    menu = plot.build_context_menu(QPointF(mx + 2, y))
+    texts = [act.text() for act in menu.actions()]
+    assert "Remove marker " + plot.marker_label(1) in texts
+    assert "Clear markers (3)" in texts
+    next(act for act in menu.actions() if act.text().startswith("Remove marker")).trigger()
+    assert len(plot.markers) == 2 and len(dock.canvas_item.pins) == 2
+    assert plot.marker_label(1).startswith("2 ·")       # renumbered
+    menu = plot.build_context_menu(QPointF(5, 5))
+    assert not any(act.text().startswith("Remove marker") for act in menu.actions())
+    next(act for act in menu.actions() if act.text().startswith("Clear markers")).trigger()
+    assert plot.markers == [] and dock.canvas_item.pins == []
+    img_without = plot.render_image(1.0, opaque=True)
+    assert img_with != img_without
+    # a new profile clears markers
+    plot.add_marker(30.0)
+    draw(env, [(X0, Y), (X0 + 90, Y)])
+    assert plot.markers == [] and dock.canvas_item.pins == []
+
+
+def test_many_markers_stay_light(env):
+    """50 markers: pointer moves still repaint only the overlay, fast."""
+    import time
+    dock, s, plot = _ready_plot(env)
+    dock.act_hover.trigger()
+    for i in range(50):
+        plot.add_marker(1.0 + i * 1.9)
+    plot.grab()
+    n0 = plot.render_count
+    r = plot._plot_rect
+    t0 = time.perf_counter()
+    for i in range(20):
+        plot._cursor = QPointF(r.left() + 10 + i * 30, r.center().y())
+        plot.grab()
+    per_frame = (time.perf_counter() - t0) / 20
+    assert plot.render_count == n0          # curves not redrawn
+    assert per_frame < 0.016
+    print("overlay frame with 50 markers: %.1f ms" % (per_frame * 1000))
+    plot._cursor = None
+    plot.clear_markers()
+    assert dock.canvas_item.pins == []
+
+
+def test_closing_dock_clears_markers(env):
+    dock, s, plot = _ready_plot(env)
+    dock.act_hover.trigger()
+    plot.add_marker(20.0)
+    plot.add_marker(70.0)
+    assert len(dock.canvas_item.pins) == 2
+    dock.close()
+    env["app"].processEvents()
+    assert plot.markers == [] and dock.canvas_item.pins == []
+    env["plugin"].run()
+    s.add_layers([lyr for lyr in env["layers"] if _alive(lyr)])

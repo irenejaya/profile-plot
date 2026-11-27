@@ -279,6 +279,7 @@ class ProfileDock(QgsDockWidget):
         self.raster_panel.tree.layersDropped.connect(self._layers_dropped)
         self.splitter.splitterMoved.connect(self._on_splitter_moved)
         self.plot.cursorChainage.connect(self._on_plot_cursor)
+        self.plot.markersChanged.connect(self._on_markers_changed)
         self.plot.add_export_actions(self.image_menu)
         self.image_button.clicked.connect(lambda: self.plot.save_image("png"))
         s.colorChanged.connect(lambda *_: self._on_profiles())
@@ -369,7 +370,7 @@ class ProfileDock(QgsDockWidget):
 
     def _tool_start(self, point):
         self.plot.reset_view()
-        self.plot.clear_measure()
+        self.plot.clear_annotations()
         self.session.start_line(point, self._canvas_crs())
 
     def _tool_vertex(self, point):
@@ -434,7 +435,18 @@ class ProfileDock(QgsDockWidget):
         tail = self._to_display(s.tail_point) if s.tail_point is not None else None
         item.set_line(pts, tail, s.finished)
         item.setVisible(True)
+        if self.plot.markers:
+            self._on_markers_changed()      # e.g. the map CRS changed
         self._update_actions()
+
+    def _mapper(self):
+        """Chainage -> map point, rebuilt when the line or the map CRS
+        changes."""
+        key = (self.session.revision, self.session.tail_ch, self._display_xf_key)
+        if self._mapper_rev != key or self.session.mapper is None:
+            self.session.update_mapper(self._canvas_crs())
+            self._mapper_rev = key
+        return self.session.mapper
 
     def _on_plot_cursor(self, chainage):
         if self.canvas_item is None or not self.session.has_line:
@@ -442,11 +454,18 @@ class ProfileDock(QgsDockWidget):
         if chainage is None:
             self.canvas_item.set_marker(None)
             return
-        if self._mapper_rev != (self.session.revision, self.session.tail_ch) or \
-                self.session.mapper is None:
-            self.session.update_mapper(self._canvas_crs())
-            self._mapper_rev = (self.session.revision, self.session.tail_ch)
-        self.canvas_item.set_marker(self.session.mapper.point_at(chainage))
+        self.canvas_item.set_marker(self._mapper().point_at(chainage))
+
+    def _on_markers_changed(self, chainages=None):
+        """Numbered map markers that match the plot's markers."""
+        if chainages is None:
+            chainages = self.plot.markers
+        if not self.session.has_line:
+            if self.canvas_item is not None:
+                self.canvas_item.set_pins([])
+            return
+        mapper = self._mapper()
+        self._ensure_canvas_item().set_pins([mapper.point_at(c) for c in chainages])
 
     # ------------------------------------------------------------------
     # selected line
@@ -501,7 +520,7 @@ class ProfileDock(QgsDockWidget):
             return
         self.map_tool.drawing = False
         self.plot.reset_view()
-        self.plot.clear_measure()
+        self.plot.clear_annotations()
         if note:
             self.iface.messageBar().pushMessage("Profile Plot", "Profiling selected line" + note,
                                                 Qgis.MessageLevel.Info, 3)
@@ -791,7 +810,7 @@ class ProfileDock(QgsDockWidget):
             self.act_snap.setChecked(False)
             self.session.reset()
             self.plot.reset_view()
-            self.plot.clear_measure()
+            self.plot.clear_annotations()
             if self.canvas_item is not None:
                 self.canvas_item.clear()
                 self.canvas_item.setVisible(False)
