@@ -51,11 +51,6 @@ def show_ab():
     return get("showAB", False, bool)
 
 
-def snap_drawing():
-    """Use the project's snapping settings while drawing (off by default)."""
-    return get("snapDrawing", False, bool)
-
-
 def line_style():
     style = get("lineStyle", "smooth", str)
     return style if style in dict(LINE_STYLES) else "smooth"

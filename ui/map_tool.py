@@ -1,7 +1,7 @@
 """Line capture map tool and the alignment canvas item."""
 
-from qgis.core import QgsApplication, QgsPointXY
-from qgis.gui import QgsMapCanvasItem, QgsMapTool, QgsSnapIndicator
+from qgis.core import QgsApplication, QgsPointXY, QgsProject, QgsSnappingConfig
+from qgis.gui import QgsMapCanvasItem, QgsMapCanvasSnappingUtils, QgsMapTool, QgsSnapIndicator
 from qgis.PyQt.QtCore import QRectF, Qt, pyqtSignal
 from qgis.PyQt.QtGui import QBrush, QColor, QFont, QFontMetricsF, QPainter, QPen
 
@@ -27,23 +27,43 @@ class ProfileMapTool(QgsMapTool):
     def __init__(self, canvas):
         super().__init__(canvas)
         self.drawing = False
-        self.snapping = False    # follow project snapping (Settings), off by default
+        self.snapping = False    # Profile Plot's own snapping toggle (off by default)
         self._snap = QgsSnapIndicator(canvas)
+        self._snap_utils = None
         try:
             self.setCursor(QgsApplication.getThemeCursor(
                 QgsApplication.Cursor.CapturePoint))
         except Exception:
             self.setCursor(Qt.CursorShape.CrossCursor)
 
+    def set_snapping(self, on):
+        """Profile Plot's snapping toggle.  It is independent of QGIS's own
+        snapping button: on, clicks snap using the project's snapping setup
+        (layers, vertex/segment type, tolerance) even if QGIS snapping is
+        off; off, clicks are never snapped, even if QGIS snapping is on."""
+        self.snapping = bool(on)
+        if not self.snapping:
+            self._snap.setMatch(_null_match())
+
+    def _snapping_utils(self):
+        canvas = self.canvas()
+        if self._snap_utils is None:
+            self._snap_utils = QgsMapCanvasSnappingUtils(canvas, self)
+        cfg = QgsSnappingConfig(QgsProject.instance().snappingConfig())
+        cfg.setEnabled(True)
+        if cfg != self._snap_utils.config():
+            self._snap_utils.setConfig(cfg)
+        self._snap_utils.setCurrentLayer(canvas.currentLayer())
+        return self._snap_utils
+
     def _point(self, event):
-        """Clicked map position.  Project snapping is ignored unless the
-        "Snap to features while drawing" setting is on, so a profile line
-        never snaps just because snapping is on for editing."""
+        """Clicked map position, snapped only when our toggle is on."""
         if self.snapping:
             try:
-                p = event.snapPoint()
-                self._snap.setMatch(event.mapPointMatch())
-                return QgsPointXY(p)
+                match = self._snapping_utils().snapToMap(event.pixelPoint())
+                self._snap.setMatch(match)
+                if match.isValid():
+                    return QgsPointXY(match.point())
             except Exception:
                 pass
         return QgsPointXY(event.mapPoint())

@@ -20,7 +20,6 @@ from ..core.settings import (
     set,
     show_ab,
     show_legend,
-    snap_drawing,
     show_units,
     slope_unit,
     unit_label,
@@ -51,12 +50,6 @@ class SettingsDialog(QDialog):
                                 "Off: only the line is drawn.")
         self.show_ab.setChecked(show_ab())
         form.addRow(self.show_ab)
-        self.snap_drawing = QCheckBox("Snap to features while drawing")
-        self.snap_drawing.setToolTip("Off: the profile line is drawn exactly where you click, even "
-                                     "when snapping is on for editing.\n"
-                                     "On: clicks snap using the project's snapping settings.")
-        self.snap_drawing.setChecked(snap_drawing())
-        form.addRow(self.snap_drawing)
         self.line_style = QComboBox()
         for key, label in LINE_STYLES:
             self.line_style.addItem(label, key)
@@ -98,7 +91,6 @@ class SettingsDialog(QDialog):
     def accept(self):
         set("showLegend", self.show_legend.isChecked())
         set("showAB", self.show_ab.isChecked())
-        set("snapDrawing", self.snap_drawing.isChecked())
         set("lineStyle", self.line_style.currentData())
         set("xTitle", self.x_title.text().strip() or DEFAULT_X_TITLE)
         set("yTitle", self.y_title.text().strip() or DEFAULT_Y_TITLE)

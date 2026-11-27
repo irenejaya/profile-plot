@@ -111,6 +111,21 @@ def main():
     dock.image_menu.grab().save(os.path.join(out, "export_menu.png"))
     dock.image_menu.hide()
 
+    # Measure mode: three points on the DEM, then the pointer for a live segment
+    dock.act_measure.trigger()
+    plot._cursor = None
+    for ch_m in (12.0, 50.0):
+        px_m, py_m = plot._to_px(ch_m, plot.curve_value(dem, ch_m))
+        plot.add_measure_point(px_m, py_m)
+    px_m, py_m = plot._to_px(78.0, plot.curve_value(dem, 78.0))
+    plot._cursor = QPointF(px_m, py_m)
+    plot.update()
+    app.processEvents()
+    dock.grab().save(os.path.join(out, "dock_measure.png"))
+    plot.clear_measure()
+    plot._cursor = None
+    dock.act_hover.trigger()
+
     # Collapsed raster list (compact layout)
     dock.act_rasters.setChecked(False)
     app.processEvents()

@@ -32,6 +32,12 @@ from ..core.compat import flag_int
 TOOLTIP_ALPHA = 179
 # Exported raster images are rendered at this multiple of screen resolution.
 EXPORT_SCALE = 2.0
+# Measure mode: a click within this many pixels of a curve lands on it.
+MEASURE_SNAP_PX = 6.0
+# A press that moves less than this is a click (adds a point), more pans.
+CLICK_SLOP_PX = 4.0
+MEASURE_COLOR = QColor("#e03131")
+MINUS = "\u2212"
 _CLAMP = 1e5
 
 
@@ -306,6 +312,7 @@ class ProfilePlotWidget(QWidget):
 
     MODE_HOVER = "hover"
     MODE_CROSSHAIR = "crosshair"
+    MODE_MEASURE = "measure"
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -335,6 +342,13 @@ class ProfilePlotWidget(QWidget):
         self._drag_view = None
         self.render_count = 0
         self._ystep = 1.0
+        self._press_pos = None
+        self._panning = False
+        # measurement in data coordinates (chainage, elevation)
+        self.measure_pts = []
+        self.measure_done = False
+        self.slope_unit = "%"
+        self._mids_cache = {}
 
     # -- configuration ------------------------------------------------------
 
@@ -343,6 +357,7 @@ class ProfilePlotWidget(QWidget):
 
     def set_series(self, series, length, status_text=""):
         self.series = series
+        self._mids_cache = {}
         self.length = float(length)
         self.status_text = status_text
         if self.auto_view:
@@ -351,7 +366,204 @@ class ProfilePlotWidget(QWidget):
 
     def set_mode(self, mode):
         self.mode = mode
+        if mode == self.MODE_MEASURE:
+            self.setCursor(Qt.CursorShape.CrossCursor)
+        else:
+            self.unsetCursor()
+            if self.measure_pts and not self.measure_done:
+                self.finish_measure()
         self.update()
+
+    def set_slope_unit(self, unit):
+        self.slope_unit = "m/m" if unit == "m/m" else "%"
+        self.update()
+
+    # -- measuring ------------------------------------------------------------------
+
+    def clear_measure(self):
+        self.measure_pts = []
+        self.measure_done = False
+        self.update()
+
+    def finish_measure(self):
+        if len(self.measure_pts) < 2:
+            self.measure_pts = []
+        self.measure_done = bool(self.measure_pts)
+        self.update()
+
+    def measuring(self):
+        """True while a measurement is being drawn (not finished)."""
+        return bool(self.measure_pts) and not self.measure_done
+
+    def _mids(self, profile):
+        key = id(profile)
+        mids = self._mids_cache.get(key)
+        if mids is None:
+            mids = 0.5 * (profile.x0 + profile.x1)
+            self._mids_cache[key] = mids
+        return mids
+
+    def curve_value(self, profile, chainage):
+        """Elevation of the drawn curve at ``chainage`` (through the cell
+        values for the smooth line, the cell value for steps)."""
+        if profile.kind == "steps" and self.line_style == "steps":
+            return profile.value_at(chainage)
+        if profile.kind == "steps":
+            xs = self._mids(profile)
+        else:
+            xs = profile.x0
+        v = profile.v
+        n = xs.size
+        if n == 0:
+            return float("nan")
+        i = int(np.searchsorted(xs, chainage))
+        if i <= 0 or i >= n:
+            return profile.value_at(chainage)
+        a, b = i - 1, i
+        va, vb = v[a], v[b]
+        if not (math.isfinite(va) and math.isfinite(vb)):
+            return profile.value_at(chainage)
+        if profile.kind == "steps" and abs(profile.x0[b] - profile.x1[a]) > 1e-9:
+            return profile.value_at(chainage)       # a gap between the cells
+        t = (chainage - xs[a]) / (xs[b] - xs[a]) if xs[b] > xs[a] else 0.0
+        return float(va + t * (vb - va))
+
+    def measure_point(self, px, py, snap=True):
+        """Data point for a click at pixel (px, py): on the nearest curve
+        when one is within MEASURE_SNAP_PX vertically, else where clicked."""
+        ch, y = self._to_data(px, py)
+        if snap:
+            best = None
+            for series in self.series:
+                if series.profile is None:
+                    continue
+                v = self.curve_value(series.profile, ch)
+                if not math.isfinite(v):
+                    continue
+                _, vy = self._to_px(ch, v)
+                d = abs(vy - py)
+                if d <= MEASURE_SNAP_PX and (best is None or d < best[0]):
+                    best = (d, v)
+            if best is not None:
+                y = best[1]
+        return (ch, y)
+
+    def add_measure_point(self, px, py, snap=True):
+        if self.measure_done:
+            self.measure_pts = []
+            self.measure_done = False
+        self.measure_pts.append(self.measure_point(px, py, snap))
+        self.update()
+
+    @staticmethod
+    def measure_stats(points):
+        """Total Length (along the line, sloped), Delta Distance (horizontal,
+        along increasing chainage), Delta Elevation (rise along increasing
+        chainage) and slope (Delta Elevation / Delta Distance, or None when
+        vertical).  ``None`` for fewer than two points."""
+        if len(points) < 2:
+            return None
+        total = 0.0
+        for (x0, y0), (x1, y1) in zip(points[:-1], points[1:]):
+            total += math.hypot(x1 - x0, y1 - y0)
+        dx = points[-1][0] - points[0][0]
+        dy = points[-1][1] - points[0][1]
+        ddist = abs(dx)
+        delev = dy if dx >= 0 else -dy
+        slope = delev / ddist if ddist > 1e-12 else None
+        return {"total": total, "ddist": ddist, "delev": delev, "slope": slope}
+
+    def measure_rows(self, stats):
+        """Rows of the measurement box: (label, value text)."""
+        def signed(text):
+            return text.replace("-", MINUS)
+        cu = " m" if self.show_units else ""
+        vu = (" " + self.unit) if self.show_units else ""
+        if stats["slope"] is None:
+            slope = "\u2014"
+        elif self.slope_unit == "m/m":
+            slope = signed("{:.4f} m/m".format(stats["slope"]))
+        else:
+            slope = signed("{:.2f}%".format(100.0 * stats["slope"]))
+        return [
+            ("Total Length", "{:.2f}{}".format(stats["total"], cu)),
+            ("\u0394 Distance", "{:.2f}{}".format(stats["ddist"], cu)),
+            ("\u0394 Elevation", signed("{:.2f}{}".format(stats["delev"], vu))),
+            ("Slope", slope),
+        ]
+
+    def _paint_measure(self, p, rect, fm):
+        pts = list(self.measure_pts)
+        cur = self._cursor
+        live = (self.mode == self.MODE_MEASURE and not self.measure_done and pts
+                and cur is not None and rect.contains(cur))
+        if live:
+            pts.append(self.measure_point(cur.x(), cur.y(), not self._shift_down()))
+        if not pts:
+            return
+        px = [QPointF(*self._to_px(x, y)) for x, y in pts]
+        p.save()
+        p.setClipRect(rect.adjusted(-1, -1, 1, 1))
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        pen = QPen(MEASURE_COLOR, 1.8)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        fixed = px[:-1] if live else px
+        p.setPen(pen)
+        for a, b in zip(fixed[:-1], fixed[1:]):
+            p.drawLine(a, b)
+        if live and len(px) >= 2:
+            dash = QPen(pen)
+            dash.setStyle(Qt.PenStyle.DashLine)
+            p.setPen(dash)
+            p.drawLine(px[-2], px[-1])
+        p.setPen(QPen(MEASURE_COLOR, 1.5))
+        p.setBrush(QColor("#ffffff"))
+        for q in fixed:
+            p.drawEllipse(q, 3.5, 3.5)
+        p.setClipping(False)
+        stats = self.measure_stats(pts)
+        if stats is not None:
+            rows = self.measure_rows(stats)
+            pad = 7.0
+            gap = 12.0
+            line_h = fm.height() + 3
+            lw = max(fm.horizontalAdvance(r[0]) for r in rows)
+            vw = max(fm.horizontalAdvance(r[1]) for r in rows)
+            w = pad + lw + gap + vw + pad
+            h = pad + line_h * len(rows) + pad - 3
+            anchor = px[-1]
+            bx = anchor.x() + 12
+            by = anchor.y() - h - 10
+            if bx + w > rect.right() - 2:
+                bx = anchor.x() - 12 - w
+            bx = min(max(bx, rect.left() + 2), rect.right() - w - 2)
+            if by < rect.top() + 2:
+                by = anchor.y() + 12
+            by = min(max(by, rect.top() + 2), rect.bottom() - h - 2)
+            box = QRectF(bx, by, w, h)
+            p.setPen(QPen(QColor(0, 0, 0, 70), 1.0))
+            p.setBrush(QColor(255, 255, 255, TOOLTIP_ALPHA))
+            p.drawRoundedRect(box, 3, 3)
+            p.setPen(QPen(QColor("#000000")))
+            y = box.top() + pad - 1
+            for label, value in rows:
+                p.drawText(QRectF(bx + pad, y, lw, line_h),
+                           flag_int(Qt.AlignmentFlag.AlignLeft, Qt.AlignmentFlag.AlignVCenter),
+                           label)
+                p.drawText(QRectF(bx + pad + lw + gap, y, vw, line_h),
+                           flag_int(Qt.AlignmentFlag.AlignRight, Qt.AlignmentFlag.AlignVCenter),
+                           value)
+                y += line_h
+        p.restore()
+
+    @staticmethod
+    def _shift_down():
+        try:
+            mods = QGuiApplication.keyboardModifiers()
+            return bool(mods & Qt.KeyboardModifier.ShiftModifier)
+        except Exception:
+            return False
 
     def set_units(self, show, unit):
         self.show_units = bool(show)
@@ -641,8 +853,10 @@ class ProfilePlotWidget(QWidget):
                 bg = QColor(255, 255, 255, TOOLTIP_ALPHA)
                 self._tooltip(p, cur, self.crosshair_text(ch, ye), bg, QColor("#000000"),
                               QColor(0, 0, 0, 70))
-            else:
+            elif self.mode == self.MODE_HOVER:
                 self._paint_hover(p, cur.x(), ch, rect, colors, fm)
+        if self.measure_pts:
+            self._paint_measure(p, rect, fm)
         if visible and self.show_legend:
             self._paint_readout(p, visible, ch, fm, colors)
 
@@ -799,7 +1013,12 @@ class ProfilePlotWidget(QWidget):
 
     def mouseMoveEvent(self, event):
         pos = self._event_pos(event)
-        if self._drag_origin is not None:
+        if self._drag_origin is not None and not self._panning:
+            moved = math.hypot(pos.x() - self._drag_origin.x(), pos.y() - self._drag_origin.y())
+            if moved > CLICK_SLOP_PX:
+                self._panning = True
+                self.setCursor(Qt.CursorShape.ClosedHandCursor)
+        if self._drag_origin is not None and self._panning:
             dx = pos.x() - self._drag_origin.x()
             dy = pos.y() - self._drag_origin.y()
             xmin, xmax, ymin, ymax = self._drag_view
@@ -827,19 +1046,34 @@ class ProfilePlotWidget(QWidget):
         if event.button() == Qt.MouseButton.LeftButton:
             self._drag_origin = self._event_pos(event)
             self._drag_view = self.view
-            self.setCursor(Qt.CursorShape.ClosedHandCursor)
+            self._panning = False
+            self.setFocus()
         super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton and self._drag_origin is not None:
+            pos = self._event_pos(event)
+            was_panning = self._panning
             self._drag_origin = None
-            self.unsetCursor()
-            self.viewChanged.emit()
+            self._panning = False
+            self.set_mode(self.mode)            # restore the mode's cursor
+            if was_panning:
+                self.viewChanged.emit()
+            elif (self.mode == self.MODE_MEASURE and self._plot_rect.contains(pos)
+                  and self.length > 0):
+                shift = bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+                self.add_measure_point(pos.x(), pos.y(), snap=not shift)
         super().mouseReleaseEvent(event)
 
     def mouseDoubleClickEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
-            self.zoom_full()
+        if event.button() != Qt.MouseButton.LeftButton:
+            return
+        if self.mode == self.MODE_MEASURE:
+            # The first click of the double-click already added the point.
+            if self.measuring():
+                self.finish_measure()
+            return
+        self.zoom_full()
 
     def wheelEvent(self, event):
         delta = event.angleDelta().y()
@@ -867,8 +1101,19 @@ class ProfilePlotWidget(QWidget):
         event.accept()
 
     def keyPressEvent(self, event):
-        if event.key() in (Qt.Key.Key_Home, Qt.Key.Key_0):
+        key = event.key()
+        if key in (Qt.Key.Key_Home, Qt.Key.Key_0):
             self.zoom_full()
+            return
+        if key == Qt.Key.Key_Escape and self.measure_pts:
+            self.clear_measure()
+            return
+        if key in (Qt.Key.Key_Backspace, Qt.Key.Key_Delete) and self.measuring():
+            self.measure_pts.pop()
+            self.update()
+            return
+        if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and self.measuring():
+            self.finish_measure()
             return
         super().keyPressEvent(event)
 
@@ -883,8 +1128,13 @@ class ProfilePlotWidget(QWidget):
         self._dirty = True
 
     def contextMenuEvent(self, event):
+        if self.mode == self.MODE_MEASURE and self.measuring():
+            self.finish_measure()              # right-click finishes a measurement
+            return
         menu = QMenu(self)
         menu.addAction("Zoom full", self.zoom_full)
+        if self.measure_pts:
+            menu.addAction("Clear measurement", self.clear_measure)
         menu.addSeparator()
         self.add_export_actions(menu)
         menu.exec(event.globalPos())

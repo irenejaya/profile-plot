@@ -23,6 +23,8 @@ ICON_DIR = os.path.join(PLUGIN_DIR, "icons")
 # name -> (QGIS theme icon candidates, bundled fallback)
 _MAP = {
     "draw_line": (["/mActionCaptureLine.svg"], "draw_line.svg"),
+    "snapping": (["/mIconSnapping.svg"], "snapping.svg"),
+    "measure": (["/mActionMeasure.svg"], "measure.svg"),
     "use_selected": (["/mActionSelectRectangle.svg", "/mActionSelect.svg"],
                      "use_selected.svg"),
     "hover": ([], "hover.svg"),

@@ -891,6 +891,7 @@ def test_closing_the_dock_resets_the_tool(env):
     s.set_slope(s.rasters[0].uid)
     draw(env, [(X0, Y), (X0 + 60, Y)])
     assert s.profiles and s.has_line and dock.canvas_item.points
+    dock.act_snap.setChecked(True)
     cache_before = len(s.engine.cache)
     assert cache_before > 0
     dock.close()
@@ -903,6 +904,7 @@ def test_closing_the_dock_resets_the_tool(env):
     assert dock.canvas_item.points == [] and not dock.canvas_item.isVisible()
     assert len(s.engine.cache) == 0
     assert env["iface"].canvas.mapTool() is not dock.map_tool
+    assert not dock.act_snap.isChecked() and dock.map_tool.snapping is False
     # Reopen with the icon/shortcut: empty dock, nothing plotted
     plugin.run()
     env["app"].processEvents()
@@ -973,40 +975,65 @@ def test_add_button_adds_selected_raster_without_dialog(env, monkeypatch):
     s.add_layers(alive)
 
 
-def test_draw_tool_ignores_project_snapping_by_default(env):
-    """Clicks use the raw map position unless "Snap to features while
-    drawing" is ticked; then the project's snapped position is used."""
-    from profile_plot.core import settings
-    from profile_plot.ui.settings_dialog import SettingsDialog
+def test_snapping_toggle_uses_project_setup_independently(env):
+    """The Snapping icon is off by default.  Off: clicks are never snapped,
+    even with QGIS snapping on.  On: clicks snap with the project's setup
+    (here vertex, 20 px) even while QGIS's own snapping is off."""
+    import time
+    from qgis.core import Qgis, QgsSnappingConfig, QgsTolerance
+    from qgis.gui import QgsMapMouseEvent
+    from qgis.PyQt.QtCore import QEvent
     dock = env["plugin"].dock
     tool = dock.map_tool
+    canvas = env["iface"].canvas
+    vertex = QgsPointXY(X0 + 30.0, Y + 3.0)
+    vl = QgsVectorLayer("Point?crs=EPSG:7856", "snap targets", "memory")
+    f = QgsFeature()
+    f.setGeometry(QgsGeometry.fromPointXY(vertex))
+    vl.dataProvider().addFeatures([f])
+    QgsProject.instance().addMapLayer(vl)
+    canvas.setLayers([vl] + [lyr for lyr in canvas.layers() if lyr.id() != vl.id()])
+    env["app"].processEvents()
 
-    class Event:                      # a click with a snap target nearby
-        def mapPoint(self):
-            return QgsPointXY(100.0, 200.0)
+    def set_project_snapping(enabled):
+        cfg = QgsSnappingConfig(QgsProject.instance().snappingConfig())
+        cfg.setEnabled(enabled)
+        cfg.setMode(Qgis.SnappingMode.AllLayers)
+        cfg.setTypeFlag(Qgis.SnappingType.Vertex)
+        cfg.setTolerance(20)
+        cfg.setUnits(QgsTolerance.UnitType.Pixels)
+        QgsProject.instance().setSnappingConfig(cfg)
 
-        def snapPoint(self):
-            return QgsPointXY(101.5, 198.0)
+    near = H.map_to_pixel(canvas, vertex.x(), vertex.y())
+    near.setX(near.x() + 6)                    # 6 px from the vertex
+    ev = QgsMapMouseEvent(canvas, QEvent.Type.MouseMove, near, Qt.MouseButton.NoButton,
+                          Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier)
+    raw = ev.mapPoint()
 
-        def mapPointMatch(self):
-            from qgis.core import QgsPointLocator
-            return QgsPointLocator.Match()
+    def point_after_index():
+        p = tool._point(ev)
+        t0 = time.perf_counter()
+        while p == raw and time.perf_counter() - t0 < 3:   # locator may index async
+            env["app"].processEvents()
+            time.sleep(0.01)
+            p = tool._point(ev)
+        return p
 
-    assert settings.snap_drawing() is False
-    dock._apply_settings()
-    assert tool.snapping is False
-    p = tool._point(Event())
-    assert (p.x(), p.y()) == (100.0, 200.0)          # not snapped
-    dlg = SettingsDialog(dock)
-    assert dlg.snap_drawing.isChecked() is False
-    dlg.snap_drawing.setChecked(True)
-    dlg.accept()
-    dock._apply_settings()
-    p = tool._point(Event())
-    assert (p.x(), p.y()) == (101.5, 198.0)          # snapped
-    settings.set("snapDrawing", False)
-    dock._apply_settings()
-    assert tool.snapping is False
+    try:
+        assert not dock.act_snap.isChecked() and tool.snapping is False
+        set_project_snapping(True)                 # QGIS snapping on ...
+        assert tool._point(ev) == raw              # ... but ours off: not snapped
+        set_project_snapping(False)                # QGIS snapping off ...
+        dock.act_snap.setChecked(True)             # ... ours on: snapped
+        assert tool.snapping is True
+        p = point_after_index()
+        assert (p.x(), p.y()) == (vertex.x(), vertex.y())
+        assert QgsProject.instance().snappingConfig().enabled() is False   # untouched
+        dock.act_snap.setChecked(False)
+        assert tool._point(ev) == raw
+    finally:
+        dock.act_snap.setChecked(False)
+        QgsProject.instance().removeMapLayer(vl.id())
 
 
 def test_hover_is_the_default_mode():
@@ -1027,3 +1054,153 @@ def test_hover_is_the_default_mode():
         plugin.unload()
         if saved:
             settings.set("inspectMode", saved)
+
+
+# ---------------------------------------------------------------------------
+# Measure mode
+# ---------------------------------------------------------------------------
+
+def _send_mouse(plot, kind, x, y, button=Qt.MouseButton.LeftButton,
+                mods=Qt.KeyboardModifier.NoModifier):
+    from qgis.PyQt.QtCore import QEvent
+    from qgis.PyQt.QtGui import QMouseEvent
+    from qgis.PyQt.QtWidgets import QApplication
+    etype = {"press": QEvent.Type.MouseButtonPress, "release": QEvent.Type.MouseButtonRelease,
+             "move": QEvent.Type.MouseMove, "double": QEvent.Type.MouseButtonDblClick}[kind]
+    local = QPointF(x, y)
+    buttons = button if kind in ("press", "double") else Qt.MouseButton.NoButton
+    if kind == "move":
+        button = Qt.MouseButton.NoButton
+    ev = QMouseEvent(etype, local, QPointF(plot.mapToGlobal(local.toPoint())),
+                     button, buttons, mods)
+    QApplication.sendEvent(plot, ev)
+
+
+def _click(plot, x, y, mods=Qt.KeyboardModifier.NoModifier):
+    _send_mouse(plot, "move", x, y, mods=mods)
+    _send_mouse(plot, "press", x, y, mods=mods)
+    _send_mouse(plot, "release", x, y, mods=mods)
+
+
+def _key(plot, key):
+    from qgis.PyQt.QtCore import QEvent
+    from qgis.PyQt.QtGui import QKeyEvent
+    from qgis.PyQt.QtWidgets import QApplication
+    QApplication.sendEvent(plot, QKeyEvent(QEvent.Type.KeyPress, key,
+                                           Qt.KeyboardModifier.NoModifier))
+
+
+def test_measure_stats_and_rows():
+    from profile_plot.ui.plot_widget import ProfilePlotWidget
+    st = ProfilePlotWidget.measure_stats([(0.0, 10.0), (30.0, 13.0), (40.0, 11.0)])
+    assert st["total"] == pytest.approx(np.hypot(30, 3) + np.hypot(10, 2))
+    assert st["ddist"] == pytest.approx(40.0)
+    assert st["delev"] == pytest.approx(1.0)
+    assert st["slope"] == pytest.approx(0.025)
+    # measured right-to-left: same distance, rise along chainage, same slope
+    back = ProfilePlotWidget.measure_stats([(40.0, 11.0), (30.0, 13.0), (0.0, 10.0)])
+    assert back["ddist"] == pytest.approx(40.0) and back["delev"] == pytest.approx(1.0)
+    assert back["slope"] == pytest.approx(0.025)
+    assert ProfilePlotWidget.measure_stats([(5.0, 1.0), (5.0, 3.0)])["slope"] is None
+    assert ProfilePlotWidget.measure_stats([(5.0, 1.0)]) is None
+    w = ProfilePlotWidget()
+    rows = w.measure_rows({"total": 40.12, "ddist": 40.0, "delev": -1.45, "slope": -0.03625})
+    assert rows == [("Total Length", "40.12"), ("Δ Distance", "40.00"),
+                    ("Δ Elevation", "−1.45"), ("Slope", "−3.62%")]
+    w.set_units(True, "m AHD")
+    w.set_slope_unit("m/m")
+    rows = w.measure_rows({"total": 40.12, "ddist": 40.0, "delev": 1.0, "slope": 0.025})
+    assert rows == [("Total Length", "40.12 m"), ("Δ Distance", "40.00 m"),
+                    ("Δ Elevation", "1.00 m AHD"), ("Slope", "0.0250 m/m")]
+    assert w.measure_rows({"total": 2, "ddist": 0, "delev": 2, "slope": None})[3] == \
+        ("Slope", "—")
+
+
+def test_measure_mode_interaction(env):
+    dock = env["plugin"].dock
+    s = dock.session
+    plot = dock.plot
+    if not s.rasters:
+        s.add_layers([lyr for lyr in env["layers"] if _alive(lyr)])
+    draw(env, [(X0, Y), (X0 + 100, Y)])
+    dock.resize(1000, 340)
+    dock.show()
+    plot.grab()
+    env["app"].processEvents()
+    dock.act_measure.trigger()
+    assert plot.mode == "measure" and dock.current_inspect_mode() == "measure"
+    dem = s.profiles[s.rasters[0].uid]
+
+    # 1st point: click 3 px above the DEM curve at 20 m -> snaps onto it
+    x1, y1 = plot._to_px(20.0, plot.curve_value(dem, 20.0))
+    _click(plot, x1, y1 - 3)
+    assert len(plot.measure_pts) == 1
+    ch1, el1 = plot.measure_pts[0]
+    assert el1 == pytest.approx(plot.curve_value(dem, ch1), abs=1e-9)
+    # 2nd point with Shift: placed freely where clicked (no snap)
+    x2, y2 = plot._to_px(60.0, plot.curve_value(dem, 60.0))
+    _click(plot, x2, y2 - 3, Qt.KeyboardModifier.ShiftModifier)
+    ch2, el2 = plot.measure_pts[1]
+    assert el2 == pytest.approx(plot._to_data(x2, y2 - 3)[1], abs=1e-9)
+    # live segment follows the mouse; Backspace removes the last point
+    _send_mouse(plot, "move", x2 + 40, y2)
+    assert plot.measuring() and not plot.grab().isNull()
+    _key(plot, Qt.Key.Key_Backspace)
+    assert len(plot.measure_pts) == 1
+    _click(plot, x2, y2 - 3, Qt.KeyboardModifier.ShiftModifier)
+    # dragging pans the plot and does not add a point
+    view = plot.view
+    _send_mouse(plot, "press", x2, y2 + 30)
+    _send_mouse(plot, "move", x2 + 40, y2 + 30, button=Qt.MouseButton.LeftButton)
+    _send_mouse(plot, "release", x2 + 40, y2 + 30)
+    assert len(plot.measure_pts) == 2 and plot.view != view
+    plot.zoom_full()
+    plot.grab()
+    # 3rd point by double-click (the first click adds it, the double-click finishes)
+    x3, y3 = plot._to_px(80.0, plot.curve_value(dem, 80.0))
+    _click(plot, x3, y3)
+    _send_mouse(plot, "double", x3, y3)
+    _send_mouse(plot, "release", x3, y3)
+    assert plot.measure_done and len(plot.measure_pts) == 3
+    st = plot.measure_stats(plot.measure_pts)
+    xs = [p[0] for p in plot.measure_pts]
+    ys = [p[1] for p in plot.measure_pts]
+    assert st["ddist"] == pytest.approx(xs[-1] - xs[0])
+    assert st["delev"] == pytest.approx(ys[-1] - ys[0])
+    assert st["total"] == pytest.approx(sum(np.hypot(np.diff(xs), np.diff(ys))))
+    # switching to Hover keeps the finished measurement on screen
+    dock.act_hover.trigger()
+    assert plot.mode == "hover" and len(plot.measure_pts) == 3
+    assert not plot.grab().isNull()
+    # back to Measure: a new click starts a new measurement
+    dock.act_measure.trigger()
+    _click(plot, x1, y1)
+    assert len(plot.measure_pts) == 1 and not plot.measure_done
+    # right-click finishes (needs >= 2 points to keep it)
+    _click(plot, x2, y2)
+    from qgis.PyQt.QtCore import QPoint
+    from qgis.PyQt.QtGui import QContextMenuEvent
+    from qgis.PyQt.QtWidgets import QApplication
+    QApplication.sendEvent(plot, QContextMenuEvent(QContextMenuEvent.Reason.Mouse,
+                                                   QPoint(int(x2), int(y2))))
+    assert plot.measure_done and len(plot.measure_pts) == 2
+    # Esc clears
+    _key(plot, Qt.Key.Key_Escape)
+    assert plot.measure_pts == []
+    # a new profile clears a measurement
+    _click(plot, x1, y1)
+    _click(plot, x2, y2)
+    assert len(plot.measure_pts) == 2
+    dock.act_hover.trigger()
+    draw(env, [(X0, Y), (X0 + 90, Y)])
+    assert plot.measure_pts == []
+    # Measure is not remembered as the start mode
+    from profile_plot.core import settings
+    assert settings.get("inspectMode", "", str) == "hover"
+
+
+def _alive(lyr):
+    try:
+        return QgsProject.instance().mapLayer(lyr.id()) is not None
+    except RuntimeError:
+        return False

@@ -132,7 +132,18 @@ class ProfileDock(QgsDockWidget):
         self.act_draw = QAction(icons.icon("draw_line"), "Draw line", self)
         self.act_select = QAction(icons.icon("use_selected"), "Use selected line", self)
         self.act_select.setToolTip("Profile the selected line feature")
+        self.act_snap = QAction(icons.icon("snapping"), "Snapping", self)
+        self.act_snap.setCheckable(True)
+        self.act_snap.setChecked(False)
+        self.act_snap.setToolTip(
+            "Snapping while drawing the profile line\n"
+            "On: clicks snap using the project's snapping settings (layers, type, tolerance).\n"
+            "Off: the line goes exactly where you click.\n"
+            "Independent of the QGIS snapping button. Off each time the dock opens.")
         bar.addWidget(_tool_button(self.act_draw, True))
+        b_snap = _tool_button(self.act_snap)
+        b_snap.setAccessibleName("Snapping while drawing")
+        bar.addWidget(b_snap)
         bar.addWidget(_tool_button(self.act_select, True))
         bar.addWidget(_separator())
 
@@ -142,14 +153,22 @@ class ProfileDock(QgsDockWidget):
         self.act_cross = QAction(icons.icon("crosshair"), "Crosshair", self)
         self.act_cross.setCheckable(True)
         self.act_cross.setToolTip("Crosshair: read chainage and elevation anywhere in the plot")
-        grp = QActionGroup(self)
-        grp.setExclusive(True)
-        grp.addAction(self.act_hover)
-        grp.addAction(self.act_cross)
+        self.act_measure = QAction(icons.icon("measure"), "Measure", self)
+        self.act_measure.setCheckable(True)
+        self.act_measure.setToolTip(
+            "Measure in the plot\n"
+            "Click to add points, right-click or double-click to finish, Backspace to undo\n"
+            "the last point, Esc to clear. Points snap to a curve when close (hold Shift to\n"
+            "place freely). Drag to pan.")
+        self.inspect_group = QActionGroup(self)
+        self.inspect_group.setExclusive(True)
+        for act in (self.act_hover, self.act_cross, self.act_measure):
+            self.inspect_group.addAction(act)
         mode = settings.get("inspectMode", "hover", str)
-        (self.act_hover if mode == "hover" else self.act_cross).setChecked(True)
+        (self.act_cross if mode == "crosshair" else self.act_hover).setChecked(True)
         bar.addWidget(_tool_button(self.act_hover, True))
         bar.addWidget(_tool_button(self.act_cross, True))
+        bar.addWidget(_tool_button(self.act_measure, True))
         bar.addWidget(_separator())
 
         self.act_zoom = QAction(icons.icon("zoom_full"), "Zoom full", self)
@@ -246,7 +265,8 @@ class ProfileDock(QgsDockWidget):
         s.message.connect(self._message)
         self.act_draw.triggered.connect(self.start_drawing)
         self.act_select.triggered.connect(self.use_selected_line)
-        self.act_hover.toggled.connect(self._on_inspect_mode)
+        self.act_snap.toggled.connect(self.map_tool.set_snapping)
+        self.inspect_group.triggered.connect(self._on_inspect_action)
         self.act_zoom.triggered.connect(self.plot.zoom_full)
         self.act_export.triggered.connect(self.export_line)
         self.act_settings.triggered.connect(self.open_settings)
@@ -259,7 +279,7 @@ class ProfileDock(QgsDockWidget):
         self.plot.add_export_actions(self.image_menu)
         self.image_button.clicked.connect(lambda: self.plot.save_image("png"))
         s.colorChanged.connect(lambda *_: self._on_profiles())
-        self.plot.set_mode("hover" if self.act_hover.isChecked() else "crosshair")
+        self.plot.set_mode(self.current_inspect_mode())
         self.tabs.currentChanged.connect(lambda _i: self._refresh_table())
         self.table_panel.export_button.clicked.connect(self.export_csv)
         self.closedStateChanged.connect(self._on_closed_state)
@@ -346,6 +366,7 @@ class ProfileDock(QgsDockWidget):
 
     def _tool_start(self, point):
         self.plot.reset_view()
+        self.plot.clear_measure()
         self.session.start_line(point, self._canvas_crs())
 
     def _tool_vertex(self, point):
@@ -477,6 +498,7 @@ class ProfileDock(QgsDockWidget):
             return
         self.map_tool.drawing = False
         self.plot.reset_view()
+        self.plot.clear_measure()
         if note:
             self.iface.messageBar().pushMessage("Profile Plot", "Profiling selected line" + note,
                                                 Qgis.MessageLevel.Info, 3)
@@ -652,10 +674,16 @@ class ProfileDock(QgsDockWidget):
     # actions
     # ------------------------------------------------------------------
 
-    def _on_inspect_mode(self, hover_checked):
-        mode = "hover" if hover_checked else "crosshair"
+    def current_inspect_mode(self):
+        if self.act_measure.isChecked():
+            return "measure"
+        return "crosshair" if self.act_cross.isChecked() else "hover"
+
+    def _on_inspect_action(self, _action=None):
+        mode = self.current_inspect_mode()
         self.plot.set_mode(mode)
-        settings.set("inspectMode", mode)
+        if mode != "measure":           # Measure is a temporary tool, not remembered
+            settings.set("inspectMode", mode)
 
     def _on_sampling(self, index):
         mode = self.sampling_combo.itemData(index)
@@ -702,7 +730,7 @@ class ProfileDock(QgsDockWidget):
         self.plot.set_show_legend(settings.show_legend())
         self.plot.set_line_style(settings.line_style())
         self.plot.set_axis_titles(settings.x_title(), settings.y_title())
-        self.map_tool.snapping = settings.snap_drawing()
+        self.plot.set_slope_unit(self.slope_unit)
         if self.canvas_item is not None:
             self.canvas_item.set_show_ab(settings.show_ab())
         self.raster_panel.set_show_units(show)
@@ -757,8 +785,10 @@ class ProfileDock(QgsDockWidget):
         if closed:
             self._exit_tool()
             self.map_tool.drawing = False
+            self.act_snap.setChecked(False)
             self.session.reset()
             self.plot.reset_view()
+            self.plot.clear_measure()
             if self.canvas_item is not None:
                 self.canvas_item.clear()
                 self.canvas_item.setVisible(False)

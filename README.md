@@ -30,16 +30,18 @@ to see each cell as a flat step, choose *Profile line: Steps* in Settings.
 4. [Assign your shortcut](#assign-your-shortcut)
 5. [Drawing a line](#drawing-a-line)
 6. [The dock, part by part](#the-dock-part-by-part)
-7. [Reading the plot](#reading-the-plot)
-8. [Sampling modes](#sampling-modes)
-9. [Length, ΔZ and average slope](#length-δz-and-average-slope)
-10. [Table and CSV export](#table-and-csv-export)
-11. [Exporting the line and the plot](#exporting-the-line-and-the-plot)
-12. [Settings](#settings)
-13. [Rasters, CRSs and accuracy](#rasters-crss-and-accuracy)
-14. [Speed](#speed)
-15. [Troubleshooting](#troubleshooting)
-16. [Development](#development)
+7. [Snapping](#snapping)
+8. [Reading the plot](#reading-the-plot)
+9. [Measuring in the plot](#measuring-in-the-plot)
+10. [Sampling modes](#sampling-modes)
+11. [Length, ΔZ and average slope](#length-δz-and-average-slope)
+12. [Table and CSV export](#table-and-csv-export)
+13. [Exporting the line and the plot](#exporting-the-line-and-the-plot)
+14. [Settings](#settings)
+15. [Rasters, CRSs and accuracy](#rasters-crss-and-accuracy)
+16. [Speed](#speed)
+17. [Troubleshooting](#troubleshooting)
+18. [Development](#development)
 
 ---
 
@@ -58,6 +60,8 @@ to see each cell as a flat step, choose *Profile line: Steps* in Settings.
 * **Hover and crosshair inspection.** Hover shows a vertical guide with every plot's value;
   crosshair shows the chainage and elevation at the cursor. A yellow dot marks the same station
   on the map.
+* **Measure in the plot.** Click points on the plot to read Total Length, Δ Distance,
+  Δ Elevation and Slope.
 * **Optional slope layer.** Live length, ΔZ and average slope, in % or m/m.
 * **Exports.** A table tab with CSV export, the line as a temporary layer, and the plot as PNG,
   JPEG, SVG or clipboard.
@@ -123,7 +127,7 @@ The assigned keys are shown in the icon's and the **Draw line** button's tooltip
 
 | Action | How |
 |---|---|
-| Add a vertex | left-click, exactly where you click. Project snapping is ignored, so turning snapping on for editing doesn't affect profile lines. Tick *Snap to features while drawing* in Settings to snap. |
+| Add a vertex | left-click. Clicks go exactly where you click unless the dock's **Snapping** icon is on, see [Snapping](#snapping). |
 | Undo the last vertex | Backspace (or Delete) |
 | Finish | right-click (or Enter) |
 | Cancel the line in progress | Esc |
@@ -146,8 +150,9 @@ a new line or close the dock.
 |---|---|
 | ☰ Rasters | Shows or hides the raster list (compact layout). |
 | **Draw line** | Starts line capture. Same action as the plugin icon and your shortcut. |
+| Snapping (QGIS magnet icon) | Snaps the profile line's clicks while drawing. Off each time the dock opens. See [Snapping](#snapping). |
 | **Use selected line** | Profiles the selected line feature, using the active layer first. Curved lines are segmentised; for a multipart line the first part is used. |
-| **Hover** / **Crosshair** | Inspection mode, see [Reading the plot](#reading-the-plot). Hover is the default; your choice is remembered. |
+| **Hover** / **Crosshair** / **Measure** | What the pointer does in the plot, see [Reading the plot](#reading-the-plot) and [Measuring in the plot](#measuring-in-the-plot). Hover is the default; Hover or Crosshair is remembered, Measure is not. |
 | Zoom full | Fits the whole profile. |
 | Export line to temporary layer (scratch-layer icon) | Adds a temporary layer *Profile alignment* with the original vertices, direction and CRS. Enabled once a line is finished. |
 | Export plot image ▾ | Click the icon to save a PNG. The arrow offers PNG, JPEG, SVG (vector) or *Copy to clipboard*. |
@@ -193,6 +198,18 @@ grade.
 
 ![Compact layout](docs/images/dock_compact.png)
 
+## Snapping
+
+The **Snapping** icon (QGIS's magnet) in the dock toolbar controls snapping for drawing the
+profile line only. It is **off** each time the dock opens.
+
+| Icon | Clicks while drawing a profile line |
+|---|---|
+| off | go exactly where you click, even if QGIS snapping is on for editing |
+| on | snap using your project's snapping setup (layers, vertex/segment type, tolerance from *Project ▸ Snapping Options*), even if QGIS's own snapping button is off |
+
+The icon never changes QGIS's own snapping, so your editing is not affected.
+
 ## Reading the plot
 
 | Mode | Tooltip | Shown |
@@ -222,7 +239,34 @@ grade.
 | Shift + wheel | zoom elevation only |
 | drag | pan |
 | double-click, Home or Zoom full | fit the whole profile |
-| right-click | *Zoom full* and the image export options |
+| right-click | *Zoom full*, *Clear measurement* (when there is one) and the image export options |
+
+## Measuring in the plot
+
+Pick **Measure** (QGIS's ruler icon) next to Hover and Crosshair, then:
+
+| Action | How |
+|---|---|
+| Add a point | click in the plot. Within a few pixels of a curve, the point lands on the curve; hold **Shift** to place it exactly where you click. |
+| Finish | right-click, double-click or Enter |
+| Undo the last point | Backspace |
+| Clear | Esc, or right-click ▸ *Clear measurement* |
+| New measurement | click again after finishing |
+| Pan while measuring | drag (a drag never adds a point) |
+
+A box beside the line shows the measurement and updates live as you move the mouse:
+
+| Value | Meaning |
+|---|---|
+| Total Length | Length along the measured line: √(Δchainage² + Δelevation²) summed over its segments |
+| Δ Distance | Horizontal distance between the first and last point (chainage) |
+| Δ Elevation | Rise from the first to the last point along increasing chainage (negative = falling) |
+| Slope | Δ Elevation ÷ Δ Distance, in % or m/m (Settings ▸ Slope unit) |
+
+The measurement stays on the plot when you switch back to Hover or Crosshair. It is cleared by
+Esc, by a new profile line, or by closing the dock.
+
+![Measuring in the plot](docs/images/dock_measure.png)
 
 ![Legend switched on](docs/images/dock_legend.png)
 
@@ -291,7 +335,6 @@ Images match what you see, including the legend if it's on.
 | Setting | Default | Effect |
 |---|---|---|
 | Show legend | off | Corner box with each raster and its value at the pointer. |
-| Snap to features while drawing | off | Off: profile lines go exactly where you click, even with snapping on for editing. On: clicks snap using the project's snapping settings. |
 | Show A / B labels on the map line | off | Marks the start (A) and end (B) of the line on the map. Off: only the line. |
 | Profile line | Smooth line | *Smooth line* through the cell values, or *Steps (native cells)*. |
 | X-axis title | Chainage | Title under the plot. Leave it empty to return to the default. |
@@ -424,6 +467,9 @@ The layout follows the usual QGIS plugin repository shape: the root is the plugi
 * The shortcut tooltips.
 * Exported vertices, direction and CRS.
 * Settings, colours, tooltips, image export and the map marker, driven by real mouse events.
+* Snapping with a real layer and project snapping setup, on and off independently of QGIS's own
+  snapping button.
+* Measuring with real mouse and keyboard events: curve snap, Shift, finish, undo, clear, pan.
 * The plugin ZIP layout, the own toolbar, and the reset when the dock is closed.
 
 ## License
