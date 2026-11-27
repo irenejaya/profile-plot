@@ -595,20 +595,6 @@ class ProfileDock(QgsDockWidget):
     def _on_rasters_changed(self):
         self._update_placeholder()
         self._on_profiles()
-        QTimer.singleShot(0, self._fit_raster_panel)
-
-    def _fit_raster_panel(self):
-        """Widen the raster list so names and resolutions are not cut,
-        keeping at least 55 % of the dock for the plot."""
-        if self._compact or not self.raster_panel.isVisible():
-            return
-        sizes = self.splitter.sizes()
-        total = sum(sizes)
-        if total <= 0:
-            return
-        want = min(self.raster_panel.needed_width(), int(total * 0.45))
-        if want > sizes[0]:
-            self.splitter.setSizes([want, total - want])
 
     # ------------------------------------------------------------------
     # profile updates

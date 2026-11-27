@@ -182,7 +182,8 @@ a new line or close the dock.
 
   You can change any of them.
 * The list starts empty each time you open the dock (closing the dock clears it). The panel
-  widens to fit long names.
+  keeps the width you give it: long names end in "…", and hovering over a name shows it in full.
+  Drag the divider beside the plot to widen the panel.
 
 ### Slope layer
 

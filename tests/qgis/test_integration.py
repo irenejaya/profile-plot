@@ -556,16 +556,40 @@ def test_raster_box_is_a_table(env):
     assert tree.headerItem().text(COL_NAME) == "Name"
     assert tree.headerItem().text(COL_CELL) == "\u0394x"
     assert not tree.header().grab().isNull()
-    # Names and resolutions are not cut once the panel fits itself
+
+
+def test_long_raster_name_does_not_widen_the_panel(env):
+    """A raster with a very long name keeps the panel width; the name is
+    shortened with an ellipsis (full name in the tooltip) and the
+    resolution column stays fully visible."""
+    from profile_plot.ui.raster_list import COL_CELL, COL_NAME, format_cell_size
     dock = env["plugin"].dock
+    s = dock.session
+    tree = dock.raster_panel.tree
     dock.resize(1100, 340)
     dock.show()
     env["app"].processEvents()
-    dock._fit_raster_panel()
-    env["app"].processEvents()
-    fm = tree.fontMetrics()
-    widest = max(fm.horizontalAdvance(e.name) for e in dock.session.rasters)
-    assert tree.header().sectionSize(COL_NAME) >= widest + 8
+    before = dock.splitter.sizes()
+    src = next(lyr for lyr in env["layers"] if _alive(lyr))
+    long_name = "Flood model run 2026 November final 1% AEP plus climate change WSE max grid"
+    lyr = QgsRasterLayer(src.source(), long_name, "gdal")
+    QgsProject.instance().addMapLayer(lyr)
+    try:
+        s.add_layers([lyr])
+        for _ in range(3):
+            env["app"].processEvents()
+        assert dock.splitter.sizes() == before
+        assert tree.textElideMode() == Qt.TextElideMode.ElideRight
+        fm = tree.fontMetrics()
+        assert tree.header().sectionSize(COL_NAME) < fm.horizontalAdvance(long_name)
+        item = next(tree.topLevelItem(i) for i in range(tree.topLevelItemCount())
+                    if tree.topLevelItem(i).text(COL_NAME) == long_name)
+        assert long_name in item.toolTip(COL_NAME)
+        entry = next(e for e in s.rasters if e.layer_id == lyr.id())
+        assert tree.header().sectionSize(COL_CELL) >= fm.horizontalAdvance(
+            format_cell_size(entry, False))
+    finally:
+        QgsProject.instance().removeMapLayer(lyr.id())
 
 
 def test_legend_hidden_by_default(tmp_path):

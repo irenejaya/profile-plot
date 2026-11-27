@@ -270,6 +270,9 @@ class RasterTree(QTreeWidget):
         hdr.setSectionResizeMode(COL_COLOR, QHeaderView.ResizeMode.Fixed)
         hdr.resizeSection(COL_COLOR, icons.SWATCH_SIZE + 12)
         hdr.setSectionResizeMode(COL_NAME, QHeaderView.ResizeMode.Stretch)
+        # The panel keeps the width the user gives it: long names end in
+        # "…" (full name in the tooltip) instead of widening the panel.
+        self.setTextElideMode(Qt.TextElideMode.ElideRight)
         hdr.setSectionResizeMode(COL_CELL, QHeaderView.ResizeMode.ResizeToContents)
         hdr.setSectionsMovable(False)
         hdr.setSectionsClickable(False)
@@ -546,20 +549,6 @@ class RasterPanel(QWidget):
             combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             combo.setMaximumWidth(16777215)
         combo.updateGeometry()
-
-    def needed_width(self):
-        """Panel width that shows every name and resolution in full."""
-        tree = self.tree
-        fm = tree.fontMetrics()
-        hdr = tree.header()
-        name_w = max([fm.horizontalAdvance(e.name) for e in self.session.rasters] +
-                     [fm.horizontalAdvance("Name")]) + 16
-        cell_w = max([fm.horizontalAdvance(format_cell_size(e, self.show_units))
-                      for e in self.session.rasters] + [fm.horizontalAdvance(RESOLUTION_HEADER)]) + 18
-        cols = hdr.sectionSize(COL_VISIBLE) + hdr.sectionSize(COL_COLOR) + name_w + cell_w
-        frame = tree.frameWidth() * 2 + tree.verticalScrollBar().sizeHint().width()
-        margins = self.layout().contentsMargins()
-        return cols + frame + margins.left() + margins.right()
 
     def take_slope_box(self):
         self.slope_slot.removeWidget(self.slope_box)
