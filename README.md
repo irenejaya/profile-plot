@@ -150,9 +150,9 @@ a new line or close the dock.
 |---|---|
 | ☰ Rasters | Shows or hides the raster list (compact layout). |
 | **Draw line** | Starts line capture. Same action as the plugin icon and your shortcut. |
-| Snapping (QGIS magnet icon) | Snaps the profile line's clicks while drawing. Off each time the dock opens. See [Snapping](#snapping). |
 | **Use selected line** | Profiles the selected line feature, using the active layer first. Curved lines are segmentised; for a multipart line the first part is used. |
 | **Hover** / **Crosshair** / **Measure** | What the pointer does in the plot, see [Reading the plot](#reading-the-plot) and [Measuring in the plot](#measuring-in-the-plot). Hover is the default; Hover or Crosshair is remembered, Measure is not. |
+| Snapping (QGIS magnet icon) | Snaps the profile line's clicks while drawing. Off each time the dock opens. See [Snapping](#snapping). |
 | Zoom full | Fits the whole profile. |
 | Export line to temporary layer (scratch-layer icon) | Adds a temporary layer *Profile alignment* with the original vertices, direction and CRS. Enabled once a line is finished. |
 | Export plot image ▾ | Click the icon to save a PNG. The arrow offers PNG, JPEG, SVG (vector) or *Copy to clipboard*. |

@@ -141,9 +141,6 @@ class ProfileDock(QgsDockWidget):
             "Off: the line goes exactly where you click.\n"
             "Independent of the QGIS snapping button. Off each time the dock opens.")
         bar.addWidget(_tool_button(self.act_draw, True))
-        b_snap = _tool_button(self.act_snap)
-        b_snap.setAccessibleName("Snapping while drawing")
-        bar.addWidget(b_snap)
         bar.addWidget(_tool_button(self.act_select, True))
         bar.addWidget(_separator())
 
@@ -175,6 +172,10 @@ class ProfileDock(QgsDockWidget):
         self.act_zoom.setToolTip("Zoom full (fit the whole profile)")
         b_zoom = _tool_button(self.act_zoom)
         b_zoom.setAccessibleName("Zoom full")
+        # Snapping sits with Zoom full, right after the Hover/Crosshair/Measure group
+        b_snap = _tool_button(self.act_snap)
+        b_snap.setAccessibleName("Snapping while drawing")
+        bar.addWidget(b_snap)
         bar.addWidget(b_zoom)
         bar.addWidget(_separator())
         self.act_export = QAction(icons.icon("temporary"), "Export line to temporary layer", self)

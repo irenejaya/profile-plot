@@ -1204,3 +1204,19 @@ def _alive(lyr):
         return QgsProject.instance().mapLayer(lyr.id()) is not None
     except RuntimeError:
         return False
+
+
+def test_toolbar_order_snapping_with_zoom_full(env):
+    """Snapping sits next to Measure, in the group with Zoom full."""
+    from qgis.PyQt.QtWidgets import QFrame, QToolButton
+    dock = env["plugin"].dock
+    bar = dock.tabs.widget(0).layout().itemAt(0).layout()   # the Profile tab's toolbar row
+    seq = []
+    for i in range(bar.count()):
+        w = bar.itemAt(i).widget()
+        if isinstance(w, QFrame) and w.frameShape() == QFrame.Shape.VLine:
+            seq.append("|")
+        elif isinstance(w, QToolButton) and w.defaultAction() is not None:
+            seq.append(w.defaultAction().text())
+    k = seq.index("Snapping")
+    assert seq[k - 2:k + 2] == ["Measure", "|", "Snapping", "Zoom full"]
