@@ -11,6 +11,7 @@ fallback source through :class:`ProviderSource`, whose block reader is
 supplied by the caller.
 """
 
+import logging
 import os
 import threading
 import warnings
@@ -19,6 +20,8 @@ from collections import OrderedDict
 import numpy as np
 
 from . import sampling
+
+_log = logging.getLogger(__name__)
 
 try:  # GDAL ships with every QGIS installation.
     from osgeo import gdal
@@ -408,7 +411,7 @@ class ReadContext:
                 try:
                     b.FlushCache()
                 except Exception:
-                    pass
+                    _log.debug("GDAL FlushCache failed", exc_info=True)
             self.pool.checkin(self.spec, self._ds)
             self._ds = None
             self._bands.clear()

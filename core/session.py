@@ -19,6 +19,7 @@ Speed strategy
 """
 
 import itertools
+import logging
 import math
 import threading
 
@@ -42,6 +43,8 @@ from .assembly import (
     grade_for,
 )
 from .engine import PRIORITY_INTERACTIVE, PRIORITY_NORMAL, Job, SamplingEngine
+
+_log = logging.getLogger(__name__)
 
 # Estimated uncached tiles above which an overview preview is produced.
 PREVIEW_TILE_THRESHOLD = 48
@@ -146,7 +149,7 @@ class RasterEntry:
                 # 0 IncludeMinAndMax, 1 IncludeMax, 2 IncludeMin, 3 Exclusive
                 user_nd.append((r.min(), r.max(), b in (0, 2), b in (0, 1)))
         except Exception:
-            pass
+            _log.debug("Could not read no-data settings", exc_info=True)
         spec = None
         if layer.providerType() == "gdal":
             source = layer.source()
@@ -699,7 +702,7 @@ class ProfileSession(QObject):
             if entry.crs.isGeographic():
                 px *= 111320.0
         except Exception:
-            pass
+            _log.debug("Could not determine CRS type", exc_info=True)
         return max(SPLIT_TILES * min(lvl.tile_w, lvl.tile_h) * px, 1.0)
 
     def _key(self, entry, level, a, b, ca, mode=None):

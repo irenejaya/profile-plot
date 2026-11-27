@@ -1,5 +1,6 @@
 """The Profile Plot dock widget."""
 
+import logging
 import os
 
 from qgis.core import (
@@ -39,6 +40,7 @@ from .plot_widget import ProfilePlotWidget, SeriesView
 from .raster_list import AddRasterDialog, RasterPanel, layers_from_mime, mime_has_rasters
 from .table_view import TablePanel
 
+_log = logging.getLogger(__name__)
 
 MINUS = "−"
 
@@ -803,7 +805,7 @@ class ProfileDock(QgsDockWidget):
         try:
             self._exit_tool()
         except Exception:
-            pass
+            _log.debug("Exiting map tool during cleanup failed", exc_info=True)
         try:
             self.canvas.destinationCrsChanged.disconnect(self._sync_canvas_item)
         except (TypeError, RuntimeError):
