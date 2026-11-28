@@ -181,33 +181,111 @@ def test_grade_slope_layer_optional(env):
 
 
 def test_table_and_csv_agree_with_inspection(env, tmp_path):
+    """Table = X (chainage) + one column per raster.  Native rows are the
+    points the plot line goes through (interval centres) plus both ends."""
     dock = env["plugin"].dock
     s = dock.session
     tbl = s.table()
-    assert tbl.kind == "intervals"
+    assert tbl.kind == "native"
     assert tbl.names == ["LiDAR DEM", "1% AEP WSE", "5% AEP WSE"]
+    assert tbl.x[0] == pytest.approx(0.0) and tbl.x[-1] == pytest.approx(s.total_length())
+    assert np.all(np.diff(tbl.x) > 0)
+    assert len(tbl.columns) == 3 and all(c.size == tbl.row_count for c in tbl.columns)
     path = str(tmp_path / "p.csv")
     from profile_plot.core.export import write_csv
-    n = write_csv(path, tbl, False, "m", [np.float32] * 3)
+    n = write_csv(path, tbl, False, "m")
     assert n == tbl.row_count
     with open(path) as fh:
         rows = list(csv.reader(fh))
-    assert rows[0] == ["From", "To", "LiDAR DEM", "1% AEP WSE", "5% AEP WSE"]
-    assert rows[1][3] == "NoData"
-    # Inspection readout and CSV agree at test stations
-    for ch in (5.05, 37.0, 50.0, 50.55, 62.3, 99.95):
-        i = int(np.searchsorted(tbl.from_ch, ch, side="right")) - 1
+    assert rows[0] == ["Chainage", "LiDAR DEM", "1% AEP WSE", "5% AEP WSE"]
+    assert len(rows) == tbl.row_count + 1
+    assert rows[1][2] == "NoData"            # no water at chainage 0
+    # Inspection readout and CSV agree at every sampled row
+    for i in np.linspace(0, tbl.row_count - 1, 25).astype(int):
         row = rows[i + 1]
+        x = float(row[0])
+        assert x == pytest.approx(tbl.x[i], abs=5e-4)
         for k, e in enumerate(s.rasters):
-            v = s.profiles[e.uid].value_at(ch)
-            csv_v = row[2 + k]
+            v = s.profiles[e.uid].value_at(tbl.x[i])
             if np.isfinite(v):
-                assert float(csv_v) == pytest.approx(v, abs=1e-4)
+                assert float(row[1 + k]) == pytest.approx(v, abs=1e-4)
             else:
-                assert csv_v == "NoData"
-    # Units in headings when switched on
+                assert row[1 + k] == "NoData"
+    # Units, and the X heading follows the X-axis title
     from profile_plot.core.export import headers
-    assert headers(tbl, True, "m AHD")[:3] == ["From (m)", "To (m)", "LiDAR DEM (m AHD)"]
+    assert headers(tbl, True, "m AHD")[:2] == ["Chainage (m)", "LiDAR DEM (m AHD)"]
+    assert headers(tbl, False, "m", "Distance")[0] == "Distance"
+
+
+def test_table_copy_to_clipboard(env):
+    """Ctrl+C copies the selected cells (whole table when all are
+    selected); the Copy button and the right-click menu copy everything.
+    Tab-separated with headings, so it pastes into Excel as cells."""
+    from qgis.PyQt.QtCore import QEvent, QItemSelection, QItemSelectionModel
+    from qgis.PyQt.QtGui import QGuiApplication, QKeyEvent
+    from qgis.PyQt.QtWidgets import QApplication
+    dock = env["plugin"].dock
+    s = dock.session
+    if not s.rasters:
+        s.add_layers([lyr for lyr in env["layers"] if _alive(lyr)])
+    draw(env, [(X0, Y), (X0 + 100, Y)])
+    dock.tabs.setCurrentIndex(1)
+    env["app"].processEvents()
+    panel = dock.table_panel
+    view = panel.view
+    tbl = s.table()
+    clip = QGuiApplication.clipboard()
+    copied = []
+    panel.copied.connect(copied.append)
+    assert panel.copy_button.isEnabled() and panel.copy_button.text() == "Copy"
+    # Copy sits to the left of Export CSV
+    assert panel.copy_button.x() < panel.export_button.x()
+    # the button copies the whole table
+    clip.setText("")
+    panel.copy_button.click()
+    lines = clip.text().rstrip("\n").split("\n")
+    assert lines[0].split("\t") == ["Chainage", "LiDAR DEM", "1% AEP WSE", "5% AEP WSE"]
+    assert len(lines) == tbl.row_count + 1 and copied[-1] == tbl.row_count
+    first = lines[1].split("\t")
+    assert float(first[0]) == pytest.approx(0.0) and first[2] == "NoData"
+
+    def ctrl_c():
+        QApplication.sendEvent(view, QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_C,
+                                               Qt.KeyboardModifier.ControlModifier))
+    model = panel.model
+    sm = view.selectionModel()
+    # a block of cells: rows 10-12, columns X and LiDAR DEM
+    sm.select(QItemSelection(model.index(10, 0), model.index(12, 1)),
+              QItemSelectionModel.SelectionFlag.ClearAndSelect)
+    clip.setText("")
+    ctrl_c()
+    lines = clip.text().rstrip("\n").split("\n")
+    assert lines[0].split("\t") == ["Chainage", "LiDAR DEM"]
+    assert len(lines) == 4 and copied[-1] == 3
+    assert float(lines[1].split("\t")[0]) == pytest.approx(tbl.x[10], abs=5e-4)
+    assert float(lines[1].split("\t")[1]) == pytest.approx(tbl.columns[0][10], abs=1e-4)
+    # one cell: just its value, no heading
+    sm.select(model.index(20, 1), QItemSelectionModel.SelectionFlag.ClearAndSelect)
+    ctrl_c()
+    assert "\t" not in clip.text() and "\n" not in clip.text()
+    assert float(clip.text()) == pytest.approx(tbl.columns[0][20], abs=1e-4)
+    # Ctrl+A then Ctrl+C: the whole table
+    view.selectAll()
+    ctrl_c()
+    assert len(clip.text().rstrip("\n").split("\n")) == tbl.row_count + 1
+    # two separate blocks: union of rows/columns, unselected cells left empty
+    sel = QItemSelection(model.index(1, 0), model.index(1, 0))
+    sel.merge(QItemSelection(model.index(3, 2), model.index(3, 2)),
+              QItemSelectionModel.SelectionFlag.Select)
+    sm.select(sel, QItemSelectionModel.SelectionFlag.ClearAndSelect)
+    ctrl_c()
+    lines = clip.text().rstrip("\n").split("\n")
+    assert lines[0].split("\t") == ["Chainage", "1% AEP WSE"]
+    assert lines[1].split("\t")[1] == "" and lines[2].split("\t")[0] == ""
+    # right-click menu offers both copies
+    texts = [a.text() for a in view.build_context_menu().actions() if a.text()]
+    assert texts == ["Copy selection", "Copy whole table", "Select all"]
+    dock.tabs.setCurrentIndex(0)
 
 
 def test_export_temporary_layer(env):
@@ -308,6 +386,7 @@ def test_station_mode(env):
     assert p.x0[1] == pytest.approx(0.01)
     tbl = s.table()
     assert tbl.kind == "stations" and tbl.row_count == 10001
+    assert tbl.x[1] == pytest.approx(0.01)
     dock.sampling_combo.setCurrentIndex(dock.sampling_combo.findData("bilinear"))
     H.wait_idle(s)
     p = s.profiles[s.rasters[0].uid]

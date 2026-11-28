@@ -329,16 +329,31 @@ below.
 
 ![Table tab](docs/images/dock_table.png)
 
-The **Table** tab has one column per visible raster, in table order.
+The **Table** tab is a plain X / Y table:
+
+* **X:** the chainage. Its heading follows your X-axis title (Settings), default *Chainage*.
+* **Y columns:** one per visible raster, named after it, in raster-table order.
 
 | Sampling | Rows |
 |---|---|
-| Native cells | **From / To** chainage intervals. A new row starts whenever any raster crosses a cell boundary. |
-| 1 cm modes | one **Chainage** row per station |
+| Native cells | Chainage 0, then the centre of every stretch where no raster changes cell (the points the plot line goes through), then the end of the line |
+| 1 cm modes | one row per station (0.00, 0.01, … and the end) |
 
-* **Export CSV** writes every row once all values are final. Gaps are written as `NoData`.
-* Values keep the precision of the source raster.
-* When units are on, headings carry them, for example `From (m)` and `LiDAR DEM (m AHD)`.
+Gaps show as `NoData`. When units are on, headings carry them, for example `Chainage (m)` and
+`LiDAR DEM (m AHD)`.
+
+**Copying** (pastes straight into Excel as cells: tab-separated, with headings, values at the
+full precision of the source raster):
+
+| Action | Copies |
+|---|---|
+| **Copy** button (left of Export CSV) | the whole table |
+| **Ctrl+C** | the selected cells. Click and Shift+click a block, click a heading for a column, Ctrl+click to add more. A single cell copies just its value. |
+| **Ctrl+A** then **Ctrl+C** | the whole table |
+| right-click | *Copy selection*, *Copy whole table*, *Select all* |
+
+**Export CSV** writes every row with the same columns. Copy and Export CSV are enabled once all
+values are final.
 
 ## Exporting the line and the plot
 

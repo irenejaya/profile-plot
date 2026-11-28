@@ -213,33 +213,45 @@ def grade_for(profile):
 
 
 class TableData:
-    """Rows for the Table tab / CSV export, computed once per data change."""
+    """Rows for the Table tab, the clipboard and CSV export: one X column
+    (chainage) and one column per plotted raster, computed once per data
+    change.
 
-    def __init__(self, profiles, names):
-        self.names = names
+    * Native cells (``kind == "native"``): the points the plot line goes
+      through, i.e. the centre of every interval in which no raster changes
+      cell, plus the start and the end of the line.
+    * 1 cm stations (``kind == "stations"``): one row per station.
+    """
+
+    def __init__(self, profiles, names, dtypes=None):
+        self.names = list(names)
+        self.dtypes = list(dtypes) if dtypes is not None else [np.float64] * len(self.names)
+        self.interpolated = False
         self.kind = None
-        self.from_ch = np.empty(0)
-        self.to_ch = None
+        self.x = np.empty(0)
         self.columns = []
         profiles = [p for p in profiles if p is not None]
         if not profiles:
             return
         if all(p.kind == "steps" for p in profiles):
-            self.kind = "intervals"
+            self.kind = "native"
             bounds = sampling.union_boundaries([p.x0 for p in profiles] +
                                                [p.x1 for p in profiles])
             if bounds.size < 2:
                 return
             mids = 0.5 * (bounds[:-1] + bounds[1:])
-            self.from_ch = bounds[:-1]
-            self.to_ch = bounds[1:]
-            self.columns = [p.values_at(mids) for p in profiles]
+            self.x = np.concatenate(([bounds[0]], mids, [bounds[-1]]))
+            self.columns = [p.values_at(self.x) for p in profiles]
         else:
             self.kind = "stations"
             base = max(profiles, key=lambda p: p.x0.size)
-            self.from_ch = base.x0
+            self.x = base.x0
             self.columns = [p.values_at(base.x0) for p in profiles]
 
     @property
     def row_count(self):
-        return int(self.from_ch.size)
+        return int(self.x.size)
+
+    @property
+    def column_count(self):
+        return 1 + len(self.columns) if self.kind else 0

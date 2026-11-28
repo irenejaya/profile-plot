@@ -960,7 +960,9 @@ class ProfileSession(QObject):
         if self._table is None:
             entries = [e for e in self.visible_entries() if e.uid in self.profiles]
             self._table = TableData([self.profiles[e.uid] for e in entries],
-                                    [e.name for e in entries])
+                                    [e.name for e in entries],
+                                    [e.spec.store_dtype if e.spec is not None else np.float64
+                                     for e in entries])
             self._table.interpolated = self.mode == "bilinear"
         return self._table
 

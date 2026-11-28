@@ -286,6 +286,7 @@ class ProfileDock(QgsDockWidget):
         self.plot.set_mode(self.current_inspect_mode())
         self.tabs.currentChanged.connect(lambda _i: self._refresh_table())
         self.table_panel.export_button.clicked.connect(self.export_csv)
+        self.table_panel.copied.connect(self._on_table_copied)
         self.closedStateChanged.connect(self._on_closed_state)
         t = self.map_tool
         t.startRequested.connect(self._tool_start)
@@ -676,7 +677,8 @@ class ProfileDock(QgsDockWidget):
             return
         s = self.session
         table = s.table() if s.profiles else None
-        self.table_panel.set_table(table, self.plot.show_units, self.plot.unit, s.is_final())
+        self.table_panel.set_table(table, self.plot.show_units, self.plot.unit, s.is_final(),
+                                   settings.x_title())
 
     # ------------------------------------------------------------------
     # actions
@@ -714,15 +716,19 @@ class ProfileDock(QgsDockWidget):
         path = TablePanel.ask_path(self)
         if not path:
             return
-        entries = [e for e in s.visible_entries() if e.uid in s.profiles]
-        dtypes = [e.spec.store_dtype if e.spec is not None else None for e in entries]
         try:
-            n = write_csv(path, table, self.plot.show_units, self.plot.unit, dtypes)
+            n = write_csv(path, table, self.plot.show_units, self.plot.unit,
+                          x_title=settings.x_title())
         except OSError as exc:
             self._message("Cannot write {}: {}".format(path, exc), 2)
             return
         self.iface.messageBar().pushMessage(
             "Profile Plot", "Exported {:,} rows to {}".format(n, path), Qgis.MessageLevel.Success, 4)
+
+    def _on_table_copied(self, rows):
+        self.iface.messageBar().pushMessage(
+            "Profile Plot", "Copied {:,} row{} to the clipboard".format(rows, "" if rows == 1 else "s"),
+            Qgis.MessageLevel.Info, 3)
 
     def open_settings(self):
         from .settings_dialog import SettingsDialog
